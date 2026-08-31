@@ -15,25 +15,34 @@ import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Typography, Spacing, Radii, Shadows } from '../theme/colors';
-import { MOCK_SCANS } from '../data/mockScans';
-import { ScanResult } from '../types';
-import ScanCard from '../components/ScanCard';
+import { MOCK_SCANS, MOCK_COMPLAINTS } from '../data/mockScans';
+import { ScanResult, Complaint } from '../types';
+import StatusBadge from '../components/StatusBadge';
 
 export default function HomeScreen({ navigation }: any) {
   const scanPressAnim = useRef(new Animated.Value(1)).current;
   const [scans, setScans] = useState<ScanResult[]>(MOCK_SCANS);
+  const [complaints, setComplaints] = useState<Complaint[]>(MOCK_COMPLAINTS);
 
   useEffect(() => {
-    loadSavedScans();
+    loadData();
   }, []);
 
-  const loadSavedScans = async () => {
+  const loadData = async () => {
     try {
-      const stored = await AsyncStorage.getItem('scans');
-      if (stored) {
-        const parsed: ScanResult[] = JSON.parse(stored);
+      const storedScans = await AsyncStorage.getItem('scans');
+      if (storedScans) {
+        const parsed: ScanResult[] = JSON.parse(storedScans);
         if (parsed.length > 0) {
           setScans([...parsed, ...MOCK_SCANS]);
+        }
+      }
+
+      const storedComplaints = await AsyncStorage.getItem('complaints');
+      if (storedComplaints) {
+        const parsedCmp: Complaint[] = JSON.parse(storedComplaints);
+        if (parsedCmp.length > 0) {
+          setComplaints([...parsedCmp, ...MOCK_COMPLAINTS]);
         }
       }
     } catch {}
@@ -44,10 +53,10 @@ export default function HomeScreen({ navigation }: any) {
   const handleScanPressOut = () =>
     Animated.spring(scanPressAnim, { toValue: 1, useNativeDriver: Platform.OS !== 'web' }).start();
 
-  const totalToday = 28;
-  const complianceRate = 94;
-  const violationCount = 3;
-  const reviewCount = 2;
+  // Pending items (scanned items that are NON_COMPLIANT or NEEDS_REVIEW)
+  const pendingScans = scans.filter(
+    (s) => s.overallStatus === 'NON_COMPLIANT' || s.overallStatus === 'NEEDS_REVIEW'
+  );
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -57,11 +66,16 @@ export default function HomeScreen({ navigation }: any) {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* ── Top App Header ────────────────────────────────────────── */}
+        {/* ── Top Header (Reference Design Style) ────────────────────── */}
         <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>Welcome back 👋</Text>
-            <Text style={styles.userName}>Inspector Sharma</Text>
+          <View style={styles.headerLeft}>
+            <View style={styles.avatarPill}>
+              <Feather name="user-check" size={17} color={Colors.primary} />
+            </View>
+            <View style={{ marginLeft: 10 }}>
+              <Text style={styles.greeting}>Good morning,</Text>
+              <Text style={styles.userName}>Inspector Sharma 👋</Text>
+            </View>
           </View>
 
           <View style={styles.headerActions}>
@@ -70,7 +84,7 @@ export default function HomeScreen({ navigation }: any) {
               onPress={() => navigation.navigate('Rules')}
               activeOpacity={0.8}
             >
-              <Feather name="search" size={18} color={Colors.textPrimary} />
+              <Feather name="search" size={17} color={Colors.textPrimary} />
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -78,74 +92,78 @@ export default function HomeScreen({ navigation }: any) {
               onPress={() => navigation.navigate('Track')}
               activeOpacity={0.8}
             >
-              <Feather name="bell" size={18} color={Colors.textPrimary} />
+              <Feather name="bell" size={17} color={Colors.textPrimary} />
               <View style={styles.unreadDot} />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* ── Hero Liquid Banner (Flush top, curved bottom corners) ── */}
-        <View style={styles.heroBannerContainer}>
+        {/* ── Solid Orange Hero Banner (Reference "Keep it up" Layout) ─ */}
+        <View style={styles.heroBannerCard}>
           <ImageBackground
-            source={require('../../assets/hero_banner_scanner.jpg')}
-            style={styles.heroBannerBackground}
-            imageStyle={styles.heroBannerImage}
+            source={require('../../assets/hero_orange_banner.jpg')}
+            style={styles.heroImageBg}
+            imageStyle={styles.heroImageInner}
             resizeMode="cover"
           >
-            {/* Liquid glass light scrim overlay to ensure left text readability */}
+            {/* Liquid gradient tint on the left half to give text crisp contrast */}
             <LinearGradient
               colors={[
-                'rgba(247, 250, 252, 0.94)',
-                'rgba(247, 250, 252, 0.78)',
-                'rgba(247, 250, 252, 0.2)',
+                'rgba(252, 146, 68, 0.95)',
+                'rgba(252, 146, 68, 0.85)',
+                'rgba(252, 146, 68, 0.1)',
               ]}
               start={{ x: 0, y: 0.5 }}
               end={{ x: 1, y: 0.5 }}
-              style={styles.heroGradientOverlay}
+              style={styles.heroGradientMask}
             >
-              <View style={styles.heroContentLeft}>
-                <View style={styles.liveTagPill}>
-                  <View style={styles.liveDot} />
-                  <Text style={styles.liveTagText}>AI LEGAL METROLOGY</Text>
+              <View style={styles.heroLeftCol}>
+                <View style={styles.badgeRow}>
+                  <View style={styles.heroTagBadge}>
+                    <Text style={styles.heroTagText}>Active Duty</Text>
+                  </View>
+                  <View style={styles.rankPill}>
+                    <Text style={styles.rankPillText}>Top 5</Text>
+                  </View>
                 </View>
 
-                <Text style={styles.heroHeadline}>
-                  Verify Packaged{'\n'}Commodities
+                <Text style={styles.heroTitle}>
+                  Enforce Packaged{'\n'}Commodity Rules
                 </Text>
 
-                <Text style={styles.heroSubtext}>
-                  Instant compliance check for MRP, Net Qty & Expiry.
-                </Text>
+                <View style={styles.streakIndicatorRow}>
+                  <Text style={styles.streakLabel}>Today's Target</Text>
+                  <View style={styles.dotsRow}>
+                    <View style={[styles.dot, styles.dotActive]} />
+                    <View style={[styles.dot, styles.dotActive]} />
+                    <View style={[styles.dot, styles.dotActive]} />
+                    <View style={styles.dot} />
+                    <View style={styles.dot} />
+                  </View>
+                </View>
 
                 <Animated.View style={{ transform: [{ scale: scanPressAnim }] }}>
                   <TouchableOpacity
-                    style={styles.liquidCtaButton}
+                    style={styles.liquidCta}
                     onPressIn={handleScanPressIn}
                     onPressOut={handleScanPressOut}
                     onPress={() => navigation.navigate('Scanner')}
                     activeOpacity={0.9}
                   >
-                    <LinearGradient
-                      colors={['#FC9244', '#FF7A1A']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.liquidCtaGradient}
-                    >
-                      <View style={styles.specularTopLight} />
-                      <MaterialCommunityIcons
-                        name="barcode-scan"
-                        size={17}
-                        color={Colors.white}
-                        style={{ marginRight: 8 }}
-                      />
-                      <Text style={styles.liquidCtaText}>Scan Label</Text>
-                      <Feather
-                        name="arrow-right"
-                        size={15}
-                        color={Colors.white}
-                        style={{ marginLeft: 6 }}
-                      />
-                    </LinearGradient>
+                    <View style={styles.specularRim} />
+                    <MaterialCommunityIcons
+                      name="barcode-scan"
+                      size={16}
+                      color={Colors.textPrimary}
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text style={styles.liquidCtaText}>Scan Product</Text>
+                    <Feather
+                      name="arrow-right"
+                      size={14}
+                      color={Colors.textPrimary}
+                      style={{ marginLeft: 6 }}
+                    />
                   </TouchableOpacity>
                 </Animated.View>
               </View>
@@ -153,90 +171,181 @@ export default function HomeScreen({ navigation }: any) {
           </ImageBackground>
         </View>
 
-        {/* ── Overview Metrics Grid (Clean 2x2 Pastel Cards) ────────── */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Overview</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Profile')}>
-            <Text style={styles.seeDetails}>Profile Stats</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.metricsRow}>
-          {/* Card 1: Today's Total Scans */}
-          <View style={[styles.metricCard, { backgroundColor: Colors.porcelain }]}>
-            <View style={styles.metricTop}>
-              <Text style={styles.metricLabel}>Scans Today</Text>
-              <View style={[styles.metricIconWrap, { backgroundColor: Colors.white }]}>
-                <Feather name="camera" size={14} color={Colors.textPrimary} />
-              </View>
-            </View>
-            <View style={styles.metricBottom}>
-              <Text style={styles.metricNumber}>{totalToday}</Text>
-              <Text style={styles.metricUnit}>units</Text>
-            </View>
-          </View>
-
-          {/* Card 2: Compliance Rate */}
-          <View style={[styles.metricCard, { backgroundColor: Colors.passBg }]}>
-            <View style={styles.metricTop}>
-              <Text style={styles.metricLabel}>Compliance</Text>
-              <View style={[styles.metricIconWrap, { backgroundColor: Colors.white }]}>
-                <Feather name="check-circle" size={14} color={Colors.pass} />
-              </View>
-            </View>
-            <View style={styles.metricBottom}>
-              <Text style={[styles.metricNumber, { color: Colors.pass }]}>{complianceRate}%</Text>
-              <Text style={[styles.metricUnit, { color: Colors.pass }]}>pass</Text>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.metricsRow}>
-          {/* Card 3: Violations Flagged */}
-          <View style={[styles.metricCard, { backgroundColor: Colors.failBg }]}>
-            <View style={styles.metricTop}>
-              <Text style={styles.metricLabel}>Violations</Text>
-              <View style={[styles.metricIconWrap, { backgroundColor: Colors.white }]}>
-                <Feather name="alert-circle" size={14} color={Colors.fail} />
-              </View>
-            </View>
-            <View style={styles.metricBottom}>
-              <Text style={[styles.metricNumber, { color: Colors.fail }]}>{violationCount}</Text>
-              <Text style={[styles.metricUnit, { color: Colors.fail }]}>flagged</Text>
-            </View>
-          </View>
-
-          {/* Card 4: Needs Review */}
-          <View style={[styles.metricCard, { backgroundColor: Colors.reviewBg }]}>
-            <View style={styles.metricTop}>
-              <Text style={styles.metricLabel}>Review Needed</Text>
-              <View style={[styles.metricIconWrap, { backgroundColor: Colors.white }]}>
-                <Feather name="clock" size={14} color={Colors.review} />
-              </View>
-            </View>
-            <View style={styles.metricBottom}>
-              <Text style={[styles.metricNumber, { color: Colors.review }]}>{reviewCount}</Text>
-              <Text style={[styles.metricUnit, { color: Colors.review }]}>pending</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* ── Recent Inspections ────────────────────────────────────── */}
-        <View style={styles.section}>
+        {/* ── Horizontal Scrollable Registered Complaints ───────────── */}
+        <View style={styles.sectionContainer}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Recent Inspections</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Rules')}>
-              <Text style={styles.seeDetails}>Standards</Text>
+            <View style={styles.sectionTitleRow}>
+              <Text style={styles.sectionTitle}>Registered Complaints</Text>
+              <View style={styles.countBadge}>
+                <Text style={styles.countBadgeText}>{complaints.length}</Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('Track')}
+              style={styles.infoBtn}
+              activeOpacity={0.7}
+            >
+              <Feather name="info" size={13} color={Colors.textSecondary} style={{ marginRight: 4 }} />
+              <Text style={styles.infoText}>Track all</Text>
             </TouchableOpacity>
           </View>
 
-          {scans.slice(0, 3).map((scan) => (
-            <ScanCard
-              key={scan.id}
-              scan={scan}
-              onPress={() => navigation.navigate('Report', { scan })}
-            />
-          ))}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.horizontalScroll}
+          >
+            {complaints.map((item, index) => {
+              const isHigh = item.severity === 'HIGH' || item.severity === 'CRITICAL';
+              const cardBg = index % 2 === 0 ? Colors.porcelain : '#F3E8FF'; // porcelain or pastel lavender
+              const accentColor = index % 2 === 0 ? '#0D9488' : '#7C3AED';
+
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[styles.horizontalCard, { backgroundColor: cardBg }]}
+                  onPress={() => navigation.navigate('Track', { complaint: item })}
+                  activeOpacity={0.88}
+                >
+                  <View style={styles.cardSpecularRim} />
+                  <View style={styles.hCardTop}>
+                    <View style={[styles.hCaseIdPill, { backgroundColor: Colors.white }]}>
+                      <Text style={[styles.hCaseIdText, { color: accentColor }]}>{item.id}</Text>
+                    </View>
+                    <StatusBadge
+                      status={item.status === 'RESOLVED' ? 'PASS' : isHigh ? 'FAIL' : 'REVIEW'}
+                      size="sm"
+                    />
+                  </View>
+
+                  <Text style={styles.hCardTitle} numberOfLines={1}>
+                    {item.productName}
+                  </Text>
+                  <Text style={styles.hCardCategory}>
+                    {item.category} Commodity
+                  </Text>
+
+                  <View style={styles.violationsTagContainer}>
+                    <Feather name="alert-triangle" size={11} color={accentColor} style={{ marginRight: 4 }} />
+                    <Text style={[styles.violationsSummary, { color: accentColor }]} numberOfLines={1}>
+                      {item.violations[0] || 'Declarations missing'}
+                    </Text>
+                  </View>
+
+                  <View style={styles.hCardFooter}>
+                    <View style={styles.officerRow}>
+                      <Feather name="shield" size={12} color={Colors.textSecondary} style={{ marginRight: 4 }} />
+                      <Text style={styles.officerText}>Jurisdiction Office</Text>
+                    </View>
+                    <View style={[styles.hArrowCircle, { backgroundColor: Colors.white }]}>
+                      <Feather name="chevron-right" size={14} color={accentColor} />
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        {/* ── Pending Scans / Action Required Drafts ────────────────── */}
+        <View style={styles.sectionContainer}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitleRow}>
+              <Text style={styles.sectionTitle}>Pending Action (Drafts)</Text>
+              <View style={[styles.countBadge, { backgroundColor: Colors.failBg }]}>
+                <Text style={[styles.countBadgeText, { color: Colors.fail }]}>
+                  {pendingScans.length}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity onPress={() => navigation.navigate('Scanner')}>
+              <Text style={styles.scanMoreLink}>+ New Scan</Text>
+            </TouchableOpacity>
+          </View>
+
+          {pendingScans.map((scan) => {
+            const isNonCompliant = scan.overallStatus === 'NON_COMPLIANT';
+            const failFields = scan.fields.filter((f) => f.status === 'FAIL');
+
+            return (
+              <TouchableOpacity
+                key={scan.id}
+                style={styles.pendingCard}
+                onPress={() => navigation.navigate('Report', { scan })}
+                activeOpacity={0.85}
+              >
+                <View style={styles.cardSpecularRim} />
+                <View style={styles.pendingCardTop}>
+                  <View style={styles.pendingLeftInfo}>
+                    <View style={styles.pendingIdRow}>
+                      <Text style={styles.pendingId}>{scan.id}</Text>
+                      <Text style={styles.pendingDot}>•</Text>
+                      <Text style={styles.pendingCategory}>{scan.category}</Text>
+                    </View>
+                    <Text style={styles.pendingProductName}>{scan.productName}</Text>
+                  </View>
+
+                  <View
+                    style={[
+                      styles.scoreCircle,
+                      { backgroundColor: isNonCompliant ? Colors.failBg : Colors.reviewBg },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.scoreText,
+                        { color: isNonCompliant ? Colors.fail : Colors.review },
+                      ]}
+                    >
+                      {scan.score}%
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.pendingDivider} />
+
+                <View style={styles.pendingCardBottom}>
+                  <View style={styles.missingIssuesBox}>
+                    <Feather
+                      name="alert-circle"
+                      size={12}
+                      color={isNonCompliant ? Colors.fail : Colors.review}
+                      style={{ marginRight: 5 }}
+                    />
+                    <Text style={styles.missingIssuesText} numberOfLines={1}>
+                      {failFields.length > 0
+                        ? `${failFields.length} rule violation(s) detected`
+                        : 'Low confidence OCR requires review'}
+                    </Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.fileNoticeBtn,
+                      { backgroundColor: isNonCompliant ? Colors.almostBlack : Colors.white },
+                    ]}
+                    onPress={() => navigation.navigate('Complaint', { scan })}
+                    activeOpacity={0.8}
+                  >
+                    <Text
+                      style={[
+                        styles.fileNoticeBtnText,
+                        { color: isNonCompliant ? Colors.white : Colors.textPrimary },
+                      ]}
+                    >
+                      {isNonCompliant ? 'File Notice' : 'Verify'}
+                    </Text>
+                    <Feather
+                      name="arrow-up-right"
+                      size={12}
+                      color={isNonCompliant ? Colors.white : Colors.textPrimary}
+                      style={{ marginLeft: 3 }}
+                    />
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -251,7 +360,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
-    paddingBottom: 110, // Breathing space for floating bottom island
+    paddingBottom: 110, // Breathing space for bottom island
   },
 
   // ── Header ──────────────────────────────────────────
@@ -261,27 +370,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.md,
   },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avatarPill: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.9)',
+    ...Shadows.soft,
+  },
   greeting: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '400',
     color: Colors.textSecondary,
     letterSpacing: -0.2,
   },
   userName: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: '600',
     color: Colors.textPrimary,
-    letterSpacing: -0.4,
-    marginTop: 2,
+    letterSpacing: -0.3,
   },
   headerActions: {
     flexDirection: 'row',
     gap: Spacing.sm,
   },
   circleBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: Colors.white,
     alignItems: 'center',
     justifyContent: 'center',
@@ -292,123 +415,136 @@ const styles = StyleSheet.create({
   unreadDot: {
     position: 'absolute',
     top: 9,
-    right: 10,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    right: 9,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
     backgroundColor: Colors.primary,
     borderWidth: 1.5,
     borderColor: Colors.white,
   },
 
-  // ── Hero Banner ─────────────────────────────────────
-  heroBannerContainer: {
+  // ── Solid Orange Hero Banner (Reference Style) ─────
+  heroBannerCard: {
     width: '100%',
-    height: 200,
-    backgroundColor: Colors.white,
-    borderTopLeftRadius: 0,
-    borderTopRightRadius: 0,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
+    height: 204,
+    borderRadius: 22,
     overflow: 'hidden',
     marginBottom: Spacing.lg,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.85)',
-    ...Shadows.soft,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+    ...Shadows.medium,
   },
-  heroBannerBackground: {
+  heroImageBg: {
     flex: 1,
     width: '100%',
     height: '100%',
   },
-  heroBannerImage: {
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
+  heroImageInner: {
+    borderRadius: 22,
   },
-  heroGradientOverlay: {
+  heroGradientMask: {
     flex: 1,
     paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
+    paddingVertical: Spacing.md + 2,
     justifyContent: 'center',
   },
-  heroContentLeft: {
-    maxWidth: '68%',
+  heroLeftCol: {
+    maxWidth: '64%',
   },
-  liveTagPill: {
+  badgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.92)',
+    gap: 6,
+    marginBottom: 6,
+  },
+  heroTagBadge: {
+    backgroundColor: 'rgba(0, 0, 0, 0.25)',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: Radii.full,
-    alignSelf: 'flex-start',
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(13, 13, 18, 0.05)',
   },
-  liveDot: {
+  heroTagText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: Colors.white,
+    letterSpacing: 0.2,
+  },
+  rankPill: {
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: Radii.full,
+  },
+  rankPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.white,
+  },
+  heroTitle: {
+    fontSize: 19,
+    fontWeight: '600',
+    color: Colors.white,
+    lineHeight: 24,
+    letterSpacing: -0.4,
+  },
+  streakIndicatorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  streakLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: 'rgba(255, 255, 255, 0.85)',
+    marginRight: 6,
+  },
+  dotsRow: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  dot: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: Colors.primary,
-    marginRight: 5,
+    backgroundColor: 'rgba(255, 255, 255, 0.35)',
   },
-  liveTagText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    letterSpacing: 0.5,
-  },
-  heroHeadline: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: Colors.textPrimary,
-    lineHeight: 25,
-    letterSpacing: -0.4,
-  },
-  heroSubtext: {
-    fontSize: 12,
-    fontWeight: '400',
-    color: Colors.textSecondary,
-    marginTop: 4,
-    marginBottom: 12,
-    lineHeight: 16,
+  dotActive: {
+    backgroundColor: Colors.white,
   },
 
-  // ── Liquid Glass CTA Button ──────────────────────────
-  liquidCtaButton: {
-    alignSelf: 'flex-start',
-    borderRadius: Radii.full,
-    ...Shadows.glowOrange,
-  },
-  liquidCtaGradient: {
+  // ── Liquid Glass White CTA ───────────────────────────
+  liquidCta: {
+    backgroundColor: Colors.white,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 9,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: Radii.full,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.45)',
-    overflow: 'hidden',
+    borderColor: 'rgba(255, 255, 255, 0.9)',
+    ...Shadows.soft,
   },
-  specularTopLight: {
+  specularRim: {
     position: 'absolute',
     top: 0,
-    left: 0,
-    right: 0,
+    left: 12,
+    right: 12,
     height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.65)',
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
   },
   liquidCtaText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.white,
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.textPrimary,
     letterSpacing: -0.2,
   },
 
-  // ── Section ──────────────────────────────────────────
-  section: {
-    marginBottom: Spacing.md,
+  // ── Section Container ────────────────────────────────
+  sectionContainer: {
+    marginBottom: Spacing.lg,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -416,67 +552,224 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.sm,
   },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: Colors.textPrimary,
     letterSpacing: -0.3,
   },
-  seeDetails: {
-    fontSize: 13,
+  countBadge: {
+    backgroundColor: Colors.porcelainDark,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: Radii.full,
+    marginLeft: 6,
+  },
+  countBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  infoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.white,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: Radii.full,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  infoText: {
+    fontSize: 11,
     fontWeight: '500',
+    color: Colors.textSecondary,
+  },
+  scanMoreLink: {
+    fontSize: 12,
+    fontWeight: '600',
     color: Colors.primary,
   },
 
-  // ── Metrics 2x2 Grid ─────────────────────────────────
-  metricsRow: {
-    flexDirection: 'row',
+  // ── Horizontal Cards ─────────────────────────────────
+  horizontalScroll: {
+    paddingRight: Spacing.lg,
     gap: Spacing.sm,
-    marginBottom: Spacing.sm,
   },
-  metricCard: {
-    flex: 1,
-    borderRadius: Radii.lg,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm + 2,
+  horizontalCard: {
+    width: 220,
+    borderRadius: 18,
+    padding: Spacing.md,
     borderWidth: 1,
-    borderColor: 'rgba(13, 13, 18, 0.04)',
+    borderColor: 'rgba(255, 255, 255, 0.8)',
     ...Shadows.soft,
   },
-  metricTop: {
+  cardSpecularRim: {
+    position: 'absolute',
+    top: 0,
+    left: 14,
+    right: 14,
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.75)',
+  },
+  hCardTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 8,
   },
-  metricLabel: {
-    fontSize: 12,
+  hCaseIdPill: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: Radii.full,
+  },
+  hCaseIdText: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  hCardTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+    letterSpacing: -0.2,
+  },
+  hCardCategory: {
+    fontSize: 11,
+    fontWeight: '400',
+    color: Colors.textSecondary,
+    marginTop: 2,
+    marginBottom: 8,
+  },
+  violationsTagContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.65)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: Radii.sm,
+    marginBottom: 10,
+  },
+  violationsSummary: {
+    fontSize: 10,
+    fontWeight: '600',
+    flex: 1,
+  },
+  hCardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  officerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  officerText: {
+    fontSize: 10,
     fontWeight: '500',
     color: Colors.textSecondary,
-    letterSpacing: -0.1,
   },
-  metricIconWrap: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+  hArrowCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
     ...Shadows.soft,
   },
-  metricBottom: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
+
+  // ── Pending Scans / Drafts ───────────────────────────
+  pendingCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 18,
+    padding: Spacing.md,
+    marginBottom: Spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(13, 13, 18, 0.05)',
+    ...Shadows.soft,
   },
-  metricNumber: {
-    fontSize: 22,
+  pendingCardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  pendingLeftInfo: {
+    flex: 1,
+    paddingRight: Spacing.sm,
+  },
+  pendingIdRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  pendingId: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.textMuted,
+    letterSpacing: 0.4,
+  },
+  pendingDot: {
+    fontSize: 10,
+    color: Colors.textMuted,
+    marginHorizontal: 4,
+  },
+  pendingCategory: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: Colors.textSecondary,
+  },
+  pendingProductName: {
+    fontSize: 14,
     fontWeight: '600',
     color: Colors.textPrimary,
-    letterSpacing: -0.4,
+    letterSpacing: -0.2,
   },
-  metricUnit: {
-    fontSize: 12,
+  scoreCircle: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: Radii.full,
+  },
+  scoreText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  pendingDivider: {
+    height: 1,
+    backgroundColor: 'rgba(13, 13, 18, 0.04)',
+    marginVertical: 10,
+  },
+  pendingCardBottom: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  missingIssuesBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 8,
+  },
+  missingIssuesText: {
+    fontSize: 11,
     fontWeight: '400',
-    color: Colors.textMuted,
-    marginLeft: 4,
+    color: Colors.textSecondary,
+    flex: 1,
+  },
+  fileNoticeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: Radii.full,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  fileNoticeBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
 });
