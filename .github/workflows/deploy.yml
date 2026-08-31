@@ -35,11 +35,6 @@ jobs:
       - name: Build Web App with Expo
         run: npx expo export --platform web
 
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
-
       - name: Upload Artifact
         uses: actions/upload-pages-artifact@v3
         with:
