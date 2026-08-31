@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Spacing, Radii, Typography, Shadows } from '../theme/colors';
 import { simulateScan } from '../data/mockScans';
 
@@ -42,6 +43,11 @@ export default function ScannerScreen({ navigation }: any) {
     setStatus('Checking Legal Metrology Rules (2026.3)...');
 
     const result = await simulateScan(uri);
+    try {
+      const stored = await AsyncStorage.getItem('scans');
+      const existing = stored ? JSON.parse(stored) : [];
+      await AsyncStorage.setItem('scans', JSON.stringify([result, ...existing]));
+    } catch {}
     setScanning(false);
     navigation.navigate('Report', { scan: result });
   };

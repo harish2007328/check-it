@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,27 +9,45 @@ import {
   SafeAreaView,
   StatusBar,
   Platform,
+  ImageBackground,
 } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Typography, Spacing, Radii, Shadows } from '../theme/colors';
-import { MOCK_SCANS, MOCK_COMPLAINTS } from '../data/mockScans';
+import { MOCK_SCANS } from '../data/mockScans';
+import { ScanResult } from '../types';
 import ScanCard from '../components/ScanCard';
-import StatusBadge from '../components/StatusBadge';
 
 export default function HomeScreen({ navigation }: any) {
   const scanPressAnim = useRef(new Animated.Value(1)).current;
+  const [scans, setScans] = useState<ScanResult[]>(MOCK_SCANS);
+
+  useEffect(() => {
+    loadSavedScans();
+  }, []);
+
+  const loadSavedScans = async () => {
+    try {
+      const stored = await AsyncStorage.getItem('scans');
+      if (stored) {
+        const parsed: ScanResult[] = JSON.parse(stored);
+        if (parsed.length > 0) {
+          setScans([...parsed, ...MOCK_SCANS]);
+        }
+      }
+    } catch {}
+  };
 
   const handleScanPressIn = () =>
-    Animated.spring(scanPressAnim, { toValue: 0.96, useNativeDriver: Platform.OS !== 'web' }).start();
+    Animated.spring(scanPressAnim, { toValue: 0.95, useNativeDriver: Platform.OS !== 'web' }).start();
   const handleScanPressOut = () =>
     Animated.spring(scanPressAnim, { toValue: 1, useNativeDriver: Platform.OS !== 'web' }).start();
 
   const totalToday = 28;
-  const compliantCount = 24;
+  const complianceRate = 94;
   const violationCount = 3;
-  const reviewCount = 1;
-
-  const activeComplaint = MOCK_COMPLAINTS[0];
+  const reviewCount = 2;
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -39,11 +57,11 @@ export default function HomeScreen({ navigation }: any) {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* ── Top Header Bar ──────────────────────────────────────── */}
+        {/* ── Top App Header ────────────────────────────────────────── */}
         <View style={styles.header}>
           <View>
             <Text style={styles.greeting}>Welcome back 👋</Text>
-            <Text style={styles.userName}>Turja Sen Das</Text>
+            <Text style={styles.userName}>Inspector Sharma</Text>
           </View>
 
           <View style={styles.headerActions}>
@@ -52,7 +70,7 @@ export default function HomeScreen({ navigation }: any) {
               onPress={() => navigation.navigate('Rules')}
               activeOpacity={0.8}
             >
-              <Feather name="search" size={19} color={Colors.textPrimary} />
+              <Feather name="search" size={18} color={Colors.textPrimary} />
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -60,177 +78,165 @@ export default function HomeScreen({ navigation }: any) {
               onPress={() => navigation.navigate('Track')}
               activeOpacity={0.8}
             >
-              <Feather name="bell" size={19} color={Colors.textPrimary} />
+              <Feather name="bell" size={18} color={Colors.textPrimary} />
               <View style={styles.unreadDot} />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* ── Hero Inspection Banner Card ─────────────────────────── */}
-        <View style={styles.heroCard}>
-          <View style={styles.heroTextContainer}>
-            <Text style={styles.heroTitle}>Track Product{'\n'}Compliance</Text>
-            <Text style={styles.heroSubtitle}>
-              Scan packages for MRP, Net Qty, Best Before & Manufacturer declarations.
-            </Text>
+        {/* ── Hero Liquid Banner (Flush top, curved bottom corners) ── */}
+        <View style={styles.heroBannerContainer}>
+          <ImageBackground
+            source={require('../../assets/hero_banner_scanner.jpg')}
+            style={styles.heroBannerBackground}
+            imageStyle={styles.heroBannerImage}
+            resizeMode="cover"
+          >
+            {/* Liquid glass light scrim overlay to ensure left text readability */}
+            <LinearGradient
+              colors={[
+                'rgba(247, 250, 252, 0.94)',
+                'rgba(247, 250, 252, 0.78)',
+                'rgba(247, 250, 252, 0.2)',
+              ]}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={styles.heroGradientOverlay}
+            >
+              <View style={styles.heroContentLeft}>
+                <View style={styles.liveTagPill}>
+                  <View style={styles.liveDot} />
+                  <Text style={styles.liveTagText}>AI LEGAL METROLOGY</Text>
+                </View>
 
-            <Animated.View style={{ transform: [{ scale: scanPressAnim }] }}>
-              <TouchableOpacity
-                style={styles.heroCtaBtn}
-                onPressIn={handleScanPressIn}
-                onPressOut={handleScanPressOut}
-                onPress={() => navigation.navigate('Scanner')}
-                activeOpacity={0.9}
-              >
-                <Text style={styles.heroCtaText}>Scan Now</Text>
-                <Feather name="arrow-right" size={15} color={Colors.white} style={{ marginLeft: 6 }} />
-              </TouchableOpacity>
-            </Animated.View>
-          </View>
+                <Text style={styles.heroHeadline}>
+                  Verify Packaged{'\n'}Commodities
+                </Text>
 
-          <View style={styles.heroGraphicBox}>
-            <View style={styles.heroIconBubble}>
-              <MaterialCommunityIcons name="shield-check" size={38} color={Colors.primary} />
-            </View>
-            <View style={styles.heroMiniChip}>
-              <Feather name="zap" size={11} color={Colors.primary} style={{ marginRight: 3 }} />
-              <Text style={styles.heroMiniChipText}>AI Verified</Text>
-            </View>
-          </View>
+                <Text style={styles.heroSubtext}>
+                  Instant compliance check for MRP, Net Qty & Expiry.
+                </Text>
+
+                <Animated.View style={{ transform: [{ scale: scanPressAnim }] }}>
+                  <TouchableOpacity
+                    style={styles.liquidCtaButton}
+                    onPressIn={handleScanPressIn}
+                    onPressOut={handleScanPressOut}
+                    onPress={() => navigation.navigate('Scanner')}
+                    activeOpacity={0.9}
+                  >
+                    <LinearGradient
+                      colors={['#FC9244', '#FF7A1A']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.liquidCtaGradient}
+                    >
+                      <View style={styles.specularTopLight} />
+                      <MaterialCommunityIcons
+                        name="barcode-scan"
+                        size={17}
+                        color={Colors.white}
+                        style={{ marginRight: 8 }}
+                      />
+                      <Text style={styles.liquidCtaText}>Scan Label</Text>
+                      <Feather
+                        name="arrow-right"
+                        size={15}
+                        color={Colors.white}
+                        style={{ marginLeft: 6 }}
+                      />
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </Animated.View>
+              </View>
+            </LinearGradient>
+          </ImageBackground>
         </View>
 
-        {/* ── Metrics Overview Grid ───────────────────────────────── */}
+        {/* ── Overview Metrics Grid (Clean 2x2 Pastel Cards) ────────── */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Inspections Overview</Text>
+          <Text style={styles.sectionTitle}>Overview</Text>
           <TouchableOpacity onPress={() => navigation.navigate('Profile')}>
-            <Text style={styles.seeDetails}>See Details</Text>
+            <Text style={styles.seeDetails}>Profile Stats</Text>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.metricsGrid}>
+        <View style={styles.metricsRow}>
           {/* Card 1: Today's Total Scans */}
-          <View style={[styles.metricCard, { backgroundColor: Colors.white }]}>
+          <View style={[styles.metricCard, { backgroundColor: Colors.porcelain }]}>
             <View style={styles.metricTop}>
               <Text style={styles.metricLabel}>Scans Today</Text>
-              <View style={[styles.metricIconCircle, { backgroundColor: Colors.porcelain }]}>
-                <Feather name="camera" size={15} color={Colors.textPrimary} />
+              <View style={[styles.metricIconWrap, { backgroundColor: Colors.white }]}>
+                <Feather name="camera" size={14} color={Colors.textPrimary} />
               </View>
             </View>
-            <View style={styles.metricNumberRow}>
+            <View style={styles.metricBottom}>
               <Text style={styles.metricNumber}>{totalToday}</Text>
               <Text style={styles.metricUnit}>units</Text>
             </View>
           </View>
 
           {/* Card 2: Compliance Rate */}
-          <View style={[styles.metricCard, { backgroundColor: Colors.white }]}>
+          <View style={[styles.metricCard, { backgroundColor: Colors.passBg }]}>
             <View style={styles.metricTop}>
-              <Text style={styles.metricLabel}>Compliance Rate</Text>
-              <View style={[styles.metricIconCircle, { backgroundColor: Colors.chromeWhite }]}>
-                <Feather name="check-circle" size={15} color={Colors.pass} />
+              <Text style={styles.metricLabel}>Compliance</Text>
+              <View style={[styles.metricIconWrap, { backgroundColor: Colors.white }]}>
+                <Feather name="check-circle" size={14} color={Colors.pass} />
               </View>
             </View>
-            <View style={styles.metricNumberRow}>
-              <Text style={styles.metricNumber}>92</Text>
-              <Text style={styles.metricUnit}>%</Text>
+            <View style={styles.metricBottom}>
+              <Text style={[styles.metricNumber, { color: Colors.pass }]}>{complianceRate}%</Text>
+              <Text style={[styles.metricUnit, { color: Colors.pass }]}>pass</Text>
             </View>
           </View>
         </View>
 
-        {/* ── Secondary Metric Pill Row ───────────────────────────── */}
-        <View style={styles.statusChipsRow}>
-          <View style={[styles.statusChipItem, { backgroundColor: Colors.passBg }]}>
-            <Feather name="check" size={13} color={Colors.pass} style={{ marginRight: 6 }} />
-            <Text style={[styles.statusChipText, { color: Colors.pass }]}>
-              {compliantCount} Compliant
-            </Text>
+        <View style={styles.metricsRow}>
+          {/* Card 3: Violations Flagged */}
+          <View style={[styles.metricCard, { backgroundColor: Colors.failBg }]}>
+            <View style={styles.metricTop}>
+              <Text style={styles.metricLabel}>Violations</Text>
+              <View style={[styles.metricIconWrap, { backgroundColor: Colors.white }]}>
+                <Feather name="alert-circle" size={14} color={Colors.fail} />
+              </View>
+            </View>
+            <View style={styles.metricBottom}>
+              <Text style={[styles.metricNumber, { color: Colors.fail }]}>{violationCount}</Text>
+              <Text style={[styles.metricUnit, { color: Colors.fail }]}>flagged</Text>
+            </View>
           </View>
 
-          <View style={[styles.statusChipItem, { backgroundColor: Colors.reviewBg }]}>
-            <Feather name="alert-triangle" size={13} color={Colors.review} style={{ marginRight: 6 }} />
-            <Text style={[styles.statusChipText, { color: Colors.review }]}>
-              {reviewCount} Review
-            </Text>
-          </View>
-
-          <View style={[styles.statusChipItem, { backgroundColor: Colors.failBg }]}>
-            <Feather name="x-circle" size={13} color={Colors.fail} style={{ marginRight: 6 }} />
-            <Text style={[styles.statusChipText, { color: Colors.fail }]}>
-              {violationCount} Violations
-            </Text>
+          {/* Card 4: Needs Review */}
+          <View style={[styles.metricCard, { backgroundColor: Colors.reviewBg }]}>
+            <View style={styles.metricTop}>
+              <Text style={styles.metricLabel}>Review Needed</Text>
+              <View style={[styles.metricIconWrap, { backgroundColor: Colors.white }]}>
+                <Feather name="clock" size={14} color={Colors.review} />
+              </View>
+            </View>
+            <View style={styles.metricBottom}>
+              <Text style={[styles.metricNumber, { color: Colors.review }]}>{reviewCount}</Text>
+              <Text style={[styles.metricUnit, { color: Colors.review }]}>pending</Text>
+            </View>
           </View>
         </View>
 
-        {/* ── Active Complaint Summary ────────────────────────────── */}
-        {activeComplaint && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Active Case File</Text>
-              <TouchableOpacity onPress={() => navigation.navigate('Track')}>
-                <Text style={styles.seeDetails}>Track</Text>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity
-              style={styles.complaintCard}
-              onPress={() => navigation.navigate('Track', { complaint: activeComplaint })}
-              activeOpacity={0.85}
-            >
-              <View style={styles.complaintTop}>
-                <View style={styles.complaintIconPill}>
-                  <Feather name="file-text" size={16} color={Colors.primary} />
-                </View>
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={styles.complaintId}>{activeComplaint.id}</Text>
-                  <Text style={styles.complaintTitle} numberOfLines={1}>
-                    {activeComplaint.productName}
-                  </Text>
-                </View>
-                <StatusBadge status="REVIEW" size="sm" />
-              </View>
-
-              <View style={styles.complaintDivider} />
-
-              <View style={styles.complaintBottom}>
-                <Feather name="alert-circle" size={13} color={Colors.fail} style={{ marginRight: 5 }} />
-                <Text style={styles.complaintViolations} numberOfLines={1}>
-                  {activeComplaint.violations.join(' · ')}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* ── Recent Inspections List ─────────────────────────────── */}
+        {/* ── Recent Inspections ────────────────────────────────────── */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Recent Scans</Text>
+            <Text style={styles.sectionTitle}>Recent Inspections</Text>
             <TouchableOpacity onPress={() => navigation.navigate('Rules')}>
-              <Text style={styles.seeDetails}>See Details</Text>
+              <Text style={styles.seeDetails}>Standards</Text>
             </TouchableOpacity>
           </View>
 
-          {MOCK_SCANS.slice(0, 3).map((scan) => (
+          {scans.slice(0, 3).map((scan) => (
             <ScanCard
               key={scan.id}
               scan={scan}
               onPress={() => navigation.navigate('Report', { scan })}
             />
           ))}
-        </View>
-
-        {/* ── Educational Tip Card (Chrome White Pastel) ──────────── */}
-        <View style={styles.educationCard}>
-          <View style={styles.eduHeader}>
-            <View style={styles.eduIconCircle}>
-              <Feather name="book-open" size={14} color={Colors.textPrimary} />
-            </View>
-            <Text style={styles.eduCaps}>LEGAL METROLOGY DIRECTIVE</Text>
-          </View>
-          <Text style={styles.eduTitle}>Mandatory MRP & Unit Sale Price</Text>
-          <Text style={styles.eduBody}>
-            As per the Legal Metrology (Packaged Commodities) Amendment Rules, packages containing more than 1 kg or 1 L must declare Unit Sale Price alongside Maximum Retail Price (MRP).
-          </Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -245,23 +251,27 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
-    paddingBottom: 110, // Space for floating bottom island
+    paddingBottom: 110, // Breathing space for floating bottom island
   },
+
+  // ── Header ──────────────────────────────────────────
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
   },
   greeting: {
-    ...Typography.body,
-    color: Colors.textSecondary,
     fontSize: 13,
+    fontWeight: '400',
+    color: Colors.textSecondary,
+    letterSpacing: -0.2,
   },
   userName: {
-    ...Typography.headline,
     fontSize: 22,
-    fontWeight: '700',
+    fontWeight: '600',
+    color: Colors.textPrimary,
+    letterSpacing: -0.4,
     marginTop: 2,
   },
   headerActions: {
@@ -269,9 +279,9 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   circleBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     backgroundColor: Colors.white,
     alignItems: 'center',
     justifyContent: 'center',
@@ -281,8 +291,8 @@ const styles = StyleSheet.create({
   },
   unreadDot: {
     position: 'absolute',
-    top: 10,
-    right: 11,
+    top: 9,
+    right: 10,
     width: 8,
     height: 8,
     borderRadius: 4,
@@ -290,79 +300,115 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: Colors.white,
   },
-  heroCard: {
-    backgroundColor: Colors.porcelain,
-    borderRadius: Radii.xl,
-    padding: Spacing.lg,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: Spacing.lg,
+
+  // ── Hero Banner ─────────────────────────────────────
+  heroBannerContainer: {
+    width: '100%',
+    height: 200,
+    backgroundColor: Colors.white,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
     overflow: 'hidden',
+    marginBottom: Spacing.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.85)',
+    ...Shadows.soft,
   },
-  heroTextContainer: {
+  heroBannerBackground: {
     flex: 1,
-    paddingRight: Spacing.sm,
+    width: '100%',
+    height: '100%',
   },
-  heroTitle: {
-    fontSize: 21,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    lineHeight: 26,
-    letterSpacing: -0.4,
+  heroBannerImage: {
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
   },
-  heroSubtitle: {
-    ...Typography.caption,
-    color: Colors.textSecondary,
-    marginTop: 6,
-    marginBottom: Spacing.md,
-    lineHeight: 16,
-  },
-  heroCtaBtn: {
-    backgroundColor: Colors.primary,
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: Radii.full,
-    ...Shadows.glowOrange,
-  },
-  heroCtaText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Colors.white,
-  },
-  heroGraphicBox: {
-    alignItems: 'center',
+  heroGradientOverlay: {
+    flex: 1,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
     justifyContent: 'center',
   },
-  heroIconBubble: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: Colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Shadows.soft,
+  heroContentLeft: {
+    maxWidth: '68%',
   },
-  heroMiniChip: {
+  liveTagPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.white,
+    backgroundColor: 'rgba(255, 255, 255, 0.92)',
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 3,
     borderRadius: Radii.full,
-    marginTop: 8,
-    ...Shadows.soft,
+    alignSelf: 'flex-start',
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(13, 13, 18, 0.05)',
   },
-  heroMiniChipText: {
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.primary,
+    marginRight: 5,
+  },
+  liveTagText: {
     fontSize: 10,
     fontWeight: '700',
     color: Colors.textPrimary,
+    letterSpacing: 0.5,
   },
+  heroHeadline: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+    lineHeight: 25,
+    letterSpacing: -0.4,
+  },
+  heroSubtext: {
+    fontSize: 12,
+    fontWeight: '400',
+    color: Colors.textSecondary,
+    marginTop: 4,
+    marginBottom: 12,
+    lineHeight: 16,
+  },
+
+  // ── Liquid Glass CTA Button ──────────────────────────
+  liquidCtaButton: {
+    alignSelf: 'flex-start',
+    borderRadius: Radii.full,
+    ...Shadows.glowOrange,
+  },
+  liquidCtaGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: Radii.full,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.45)',
+    overflow: 'hidden',
+  },
+  specularTopLight: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.65)',
+  },
+  liquidCtaText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.white,
+    letterSpacing: -0.2,
+  },
+
+  // ── Section ──────────────────────────────────────────
   section: {
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -371,15 +417,19 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   sectionTitle: {
-    ...Typography.title,
-    fontSize: 17,
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+    letterSpacing: -0.3,
   },
   seeDetails: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '500',
     color: Colors.primary,
   },
-  metricsGrid: {
+
+  // ── Metrics 2x2 Grid ─────────────────────────────────
+  metricsRow: {
     flexDirection: 'row',
     gap: Spacing.sm,
     marginBottom: Spacing.sm,
@@ -387,145 +437,46 @@ const styles = StyleSheet.create({
   metricCard: {
     flex: 1,
     borderRadius: Radii.lg,
-    padding: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm + 2,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: 'rgba(13, 13, 18, 0.04)',
     ...Shadows.soft,
   },
   metricTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   metricLabel: {
-    ...Typography.caption,
     fontSize: 12,
-    color: Colors.textSecondary,
     fontWeight: '500',
+    color: Colors.textSecondary,
+    letterSpacing: -0.1,
   },
-  metricIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+  metricIconWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
+    ...Shadows.soft,
   },
-  metricNumberRow: {
+  metricBottom: {
     flexDirection: 'row',
     alignItems: 'baseline',
   },
   metricNumber: {
-    fontSize: 26,
-    fontWeight: '700',
+    fontSize: 22,
+    fontWeight: '600',
     color: Colors.textPrimary,
-    letterSpacing: -0.5,
+    letterSpacing: -0.4,
   },
   metricUnit: {
-    fontSize: 13,
-    fontWeight: '500',
+    fontSize: 12,
+    fontWeight: '400',
     color: Colors.textMuted,
     marginLeft: 4,
-  },
-  statusChipsRow: {
-    flexDirection: 'row',
-    gap: Spacing.xs,
-    marginBottom: Spacing.lg,
-  },
-  statusChipItem: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 9,
-    borderRadius: Radii.md,
-  },
-  statusChipText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  complaintCard: {
-    backgroundColor: Colors.white,
-    borderRadius: Radii.lg,
-    padding: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    ...Shadows.soft,
-  },
-  complaintTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  complaintIconPill: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: Colors.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  complaintId: {
-    ...Typography.caption,
-    fontSize: 10,
-    fontWeight: '700',
-    color: Colors.primary,
-    fontFamily: 'monospace',
-  },
-  complaintTitle: {
-    ...Typography.title,
-    fontSize: 14,
-    marginTop: 1,
-  },
-  complaintDivider: {
-    height: 1,
-    backgroundColor: Colors.borderLight,
-    marginVertical: 10,
-  },
-  complaintBottom: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  complaintViolations: {
-    ...Typography.caption,
-    color: Colors.textSecondary,
-    flex: 1,
-  },
-  educationCard: {
-    backgroundColor: Colors.chromeWhite,
-    borderRadius: Radii.xl,
-    padding: Spacing.md,
-    marginTop: Spacing.xs,
-    borderWidth: 1,
-    borderColor: Colors.chromeWhiteDark,
-  },
-  eduHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  eduIconCircle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: Colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 6,
-  },
-  eduCaps: {
-    ...Typography.labelCaps,
-    fontSize: 9,
-    color: Colors.textPrimary,
-  },
-  eduTitle: {
-    ...Typography.title,
-    fontSize: 14,
-    marginBottom: 4,
-  },
-  eduBody: {
-    ...Typography.body,
-    fontSize: 12,
-    lineHeight: 17,
-    color: Colors.textPrimary,
   },
 });
