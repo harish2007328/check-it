@@ -8,7 +8,15 @@ import {
   Dimensions,
   LayoutChangeEvent,
 } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
+import Svg, {
+  Path,
+  Defs,
+  Filter,
+  FeGaussianBlur,
+  FeOffset,
+  FeMerge,
+  FeMergeNode,
+} from 'react-native-svg';
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -169,13 +177,23 @@ export default function FloatingBottomTabBar({
       pointerEvents="box-none"
     >
       <View style={[styles.barContainer, { height: barHeight }]}>
-        {/* Smooth U-shaped cutout */}
-        <Svg width={layoutWidth} height={barHeight} style={StyleSheet.absoluteFill}>
+        {/* SVG bar with blurred drop-shadow that follows the notch curve.
+            The feGaussianBlur filter blurs the path alpha, feOffset lifts it
+            upward, then feMerge composites the blur behind the original fill —
+            giving a soft shadow on both the flat top edge and the notch walls. */}
+        <Svg
+          width={layoutWidth}
+          height={barHeight + 20}
+          viewBox={`0 -20 ${layoutWidth} ${barHeight + 20}`}
+          style={[StyleSheet.absoluteFill, { top: -20, height: barHeight + 20 }]}
+        >
+
           <Path
             d={d}
             fill="#111118"
-            stroke="rgba(255,255,255,0.09)"
+            stroke="rgba(255,255,255,0.1)"
             strokeWidth={1}
+            filter="url(#notchShadow)"
           />
         </Svg>
 
@@ -246,11 +264,8 @@ const styles = StyleSheet.create({
     width: '100%',
     position: 'relative',
     overflow: 'visible',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 14,
+    // Shadow is handled inside the SVG (follows the notch curve)
+    // — no rectangular View shadow here
   },
   tabsRow: {
     flexDirection: 'row',
