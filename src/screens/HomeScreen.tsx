@@ -11,6 +11,16 @@ import {
   Platform,
   Image,
 } from 'react-native';
+import Svg, {
+  Defs,
+  LinearGradient as SvgLinearGradient,
+  Stop,
+  Path,
+  Rect,
+  Circle,
+  Polygon,
+} from 'react-native-svg';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -19,12 +29,135 @@ import { MOCK_SCANS, MOCK_COMPLAINTS } from '../data/mockScans';
 import { ScanResult, Complaint } from '../types';
 import StatusBadge from '../components/StatusBadge';
 
+const PRODUCT_IMAGES = [
+  require('../../assets/1.png'),
+  require('../../assets/2.png'),
+  require('../../assets/3.png'),
+  require('../../assets/4.png'),
+  require('../../assets/5.png'),
+  require('../../assets/6.png'),
+  require('../../assets/7.png'),
+  require('../../assets/8.png'),
+];
+
+function DynamicStatusBar({ scrollY }: { scrollY: Animated.Value }) {
+  const [isDark, setIsDark] = useState(false);
+
+  useEffect(() => {
+    const listenerId = scrollY.addListener(({ value }) => {
+      const dark = value > 40;
+      setIsDark((prev) => (prev !== dark ? dark : prev));
+    });
+    return () => {
+      scrollY.removeListener(listenerId);
+    };
+  }, [scrollY]);
+
+  return (
+    <StatusBar
+      barStyle={isDark ? 'dark-content' : 'light-content'}
+      backgroundColor="transparent"
+      translucent={true}
+    />
+  );
+}
+
 export default function HomeScreen({ navigation }: any) {
+  const insets = useSafeAreaInsets();
   const scanPressAnim = useRef(new Animated.Value(1)).current;
+  const laserSweep = useRef(new Animated.Value(0)).current;
+  const laserOpacity = useRef(new Animated.Value(0)).current;
+  const conveyorAnim = useRef(new Animated.Value(0)).current;
+  const scrollY = useRef(new Animated.Value(0)).current;
   const [scans, setScans] = useState<ScanResult[]>(MOCK_SCANS);
   const [complaints, setComplaints] = useState<Complaint[]>(MOCK_COMPLAINTS);
 
-  useEffect(() => { loadData(); }, []);
+  const heroTranslateY = scrollY.interpolate({
+    inputRange: [-500, 0, 4000],
+    outputRange: [0, 0, 4000],
+    extrapolate: 'clamp',
+  });
+
+  const headerOpacity = scrollY.interpolate({
+    inputRange: [0, 80],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+
+  const headerOpacityInverse = scrollY.interpolate({
+    inputRange: [0, 80],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
+
+  useEffect(() => {
+    loadData();
+
+    // Unified step-by-step conveyor & scanning sequence (100% synchronized)
+    const stepAnimations: Animated.CompositeAnimation[] = [];
+
+    for (let k = 0; k < 8; k++) {
+      // 1. Scan the product currently centered in the frame (~1000ms total)
+      stepAnimations.push(
+        Animated.sequence([
+          // Reset laser position to top & fade in
+          Animated.parallel([
+            Animated.timing(laserSweep, {
+              toValue: 0,
+              duration: 0,
+              useNativeDriver: Platform.OS !== 'web',
+            }),
+            Animated.timing(laserOpacity, {
+              toValue: 1,
+              duration: 100,
+              useNativeDriver: Platform.OS !== 'web',
+            }),
+          ]),
+          // Sweep laser line down
+          Animated.timing(laserSweep, {
+            toValue: 1,
+            duration: 420,
+            useNativeDriver: Platform.OS !== 'web',
+          }),
+          // Sweep laser line back up
+          Animated.timing(laserSweep, {
+            toValue: 0,
+            duration: 420,
+            useNativeDriver: Platform.OS !== 'web',
+          }),
+          // Fade out laser right before next item moves
+          Animated.timing(laserOpacity, {
+            toValue: 0,
+            duration: 60,
+            useNativeDriver: Platform.OS !== 'web',
+          }),
+        ])
+      );
+
+      // 2. Slide next product into center frame (380ms)
+      stepAnimations.push(
+        Animated.timing(conveyorAnim, {
+          toValue: k + 1,
+          duration: 380,
+          useNativeDriver: Platform.OS !== 'web',
+        })
+      );
+    }
+
+    // Reset conveyorAnim to 0 instantly after completing 8 items (8 % 8 === 0)
+    stepAnimations.push(
+      Animated.timing(conveyorAnim, {
+        toValue: 0,
+        duration: 0,
+        useNativeDriver: Platform.OS !== 'web',
+      })
+    );
+
+    const scannerLoop = Animated.loop(Animated.sequence(stepAnimations));
+    scannerLoop.start();
+
+    return () => scannerLoop.stop();
+  }, []);
 
   const loadData = async () => {
     try {
@@ -38,7 +171,7 @@ export default function HomeScreen({ navigation }: any) {
         const parsedCmp: Complaint[] = JSON.parse(storedComplaints);
         if (parsedCmp.length > 0) setComplaints([...parsedCmp, ...MOCK_COMPLAINTS]);
       }
-    } catch {}
+    } catch { }
   };
 
   const handleScanPressIn = () =>
@@ -50,95 +183,269 @@ export default function HomeScreen({ navigation }: any) {
     (s) => s.overallStatus === 'NON_COMPLIANT' || s.overallStatus === 'NEEDS_REVIEW'
   );
 
-  return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#111118" />
+  const statusBarHeight =
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : insets.top;
+  const topPadding = statusBarHeight + 14;
 
-      <ScrollView
+  const renderCarouselItem = (index: number) => {
+    // N = 8 items
+    const val = Animated.modulo(Animated.add(conveyorAnim, index), 8);
+    const translateX = val.interpolate({
+      inputRange: [0, 1, 2, 6, 7, 8],
+      outputRange: [0, -95, -150, 150, 95, 0],
+    });
+    const scale = val.interpolate({
+      inputRange: [0, 1, 2, 6, 7, 8],
+      outputRange: [1.0, 0.62, 0.35, 0.35, 0.62, 1.0],
+    });
+    const opacity = val.interpolate({
+      inputRange: [0, 1, 2, 6, 7, 8],
+      outputRange: [1, 0.38, 0, 0, 0.38, 1],
+    });
+    const zIndex = val.interpolate({
+      inputRange: [0, 0.5, 1, 1.5, 2, 6, 7, 7.5, 8],
+      outputRange: [10, 5, 1, 0, 0, 0, 1, 5, 10],
+    });
+
+    return (
+      <Animated.View
+        key={index}
+        style={[
+          styles.carouselItem,
+          {
+            transform: [{ translateX }, { scale }],
+            opacity,
+            zIndex,
+          },
+        ]}
+      >
+        <Image
+          source={PRODUCT_IMAGES[index]}
+          style={styles.productImage}
+          resizeMode="contain"
+        />
+      </Animated.View>
+    );
+  };
+
+  return (
+    <View style={styles.safe}>
+      <DynamicStatusBar scrollY={scrollY} />
+
+      {/* ── STICKY HEADER (Fixed at Top, Transitions to White on Scroll) ── */}
+      <View style={[styles.stickyHeader, { paddingTop: topPadding }]}>
+        {/* Animated White Background Layer */}
+        <Animated.View
+          style={[
+            StyleSheet.absoluteFill,
+            styles.whiteHeaderBg,
+            { opacity: headerOpacity },
+          ]}
+        />
+
+        {/* Header Row */}
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            {/* Base Dark Greeting Text (Visible when scrolled) */}
+            <Text style={[styles.greetingTitle, styles.greetingTitleDark]}>
+              Hello, Harish! 👋
+            </Text>
+            {/* White Greeting Text (Smoothly dissolves as you scroll) */}
+            <Animated.Text
+              style={[
+                styles.greetingTitle,
+                styles.greetingTitleWhite,
+                { opacity: headerOpacityInverse },
+              ]}
+            >
+              Hello, Harish! 👋
+            </Animated.Text>
+          </View>
+
+          <View style={styles.headerRight}>
+            {/* Search icon button */}
+            <TouchableOpacity
+              style={styles.headerCircleBtn}
+              onPress={() => navigation.navigate('Rules')}
+              activeOpacity={0.85}
+            >
+              <Feather name="search" size={16} color={Colors.primary} />
+            </TouchableOpacity>
+
+            {/* Notification bell button */}
+            <TouchableOpacity
+              style={styles.headerCircleBtn}
+              onPress={() => navigation.navigate('Track')}
+              activeOpacity={0.85}
+            >
+              <Feather name="bell" size={16} color={Colors.almostBlack} />
+              <View style={styles.redBadgeDot} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+
+      <Animated.ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true }
+        )}
+        scrollEventThrottle={16}
       >
-        {/* ── DARK HERO ────────────────────────────────────── */}
-        <LinearGradient
-          colors={['#111118', '#1C1C28', '#111118']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.hero}
+        {/* ── ORANGE HERO (Fixed via translateY: heroTranslateY) ───────── */}
+        <Animated.View
+          style={[
+            styles.heroWrapper,
+            {
+              transform: [{ translateY: heroTranslateY }],
+            },
+          ]}
         >
-          {/* Header row */}
-          <View style={styles.header}>
-            <View style={styles.headerLeft}>
-              <View style={styles.avatarPill}>
-                <Feather name="shield" size={16} color={Colors.primary} />
-              </View>
-              <View style={{ marginLeft: 10 }}>
-                <Text style={styles.greeting}>Good morning,</Text>
-                <Text style={styles.userName}>Inspector Sharma 👋</Text>
+          <LinearGradient
+            colors={[Colors.primary, '#F97316', '#ED6408']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0.8, y: 1 }}
+            style={[styles.hero, { paddingTop: topPadding + 48 }]}
+          >
+            {/* Top-Left Corner Pattern */}
+            <View style={styles.topLeftPatternContainer} pointerEvents="none">
+              <Image
+                source={require('../../assets/pattern.png')}
+                style={styles.cornerPatternImg}
+                resizeMode="contain"
+              />
+            </View>
+
+            {/* Bottom-Right Corner Pattern (Mirrored Vertically & Horizontally) */}
+            <View style={styles.bottomRightPatternContainer} pointerEvents="none">
+              <Image
+                source={require('../../assets/pattern.png')}
+                style={[styles.cornerPatternImg, styles.mirroredPatternImg]}
+                resizeMode="contain"
+              />
+            </View>
+
+            {/* ── Scanning Carousel ── */}
+            <View style={styles.carouselContainer}>
+              {/* The 8 looping images */}
+              {PRODUCT_IMAGES.map((_, idx) => renderCarouselItem(idx))}
+
+              {/* High-End White Scanner Viewfinder Frame (Scaled ~30% smaller, Crisp SVG Corner Brackets) */}
+              <View style={styles.scannerFrame} pointerEvents="none">
+                {/* Corner Viewfinder Accents via SVG for razor-sharp precision */}
+                <Svg width={110} height={126} viewBox="0 0 110 126" style={StyleSheet.absoluteFill}>
+                  {/* Top-Left */}
+                  <Path
+                    d="M 3,18 L 3,6 A 3 3 0 0 1 6,3 L 18,3"
+                    stroke="#FFFFFF"
+                    strokeWidth={2.2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    fill="none"
+                  />
+                  {/* Top-Right */}
+                  <Path
+                    d="M 92,3 L 104,3 A 3 3 0 0 1 107,6 L 107,18"
+                    stroke="#FFFFFF"
+                    strokeWidth={2.2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    fill="none"
+                  />
+                  {/* Bottom-Left */}
+                  <Path
+                    d="M 3,108 L 3,120 A 3 3 0 0 0 6,123 L 18,123"
+                    stroke="#FFFFFF"
+                    strokeWidth={2.2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    fill="none"
+                  />
+                  {/* Bottom-Right */}
+                  <Path
+                    d="M 92,123 L 104,123 A 3 3 0 0 0 107,120 L 107,108"
+                    stroke="#FFFFFF"
+                    strokeWidth={2.2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    fill="none"
+                  />
+                </Svg>
+
+                {/* Synchronized Laser Scanning Beam Assembly */}
+                <Animated.View
+                  style={[
+                    styles.laserAssembly,
+                    {
+                      opacity: laserOpacity,
+                      transform: [
+                        {
+                          translateY: laserSweep.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [8, 118],
+                          }),
+                        },
+                      ],
+                    },
+                  ]}
+                >
+                  {/* Holographic glowing scan beam */}
+                  <LinearGradient
+                    colors={[
+                      'rgba(255, 255, 255, 0)',
+                      'rgba(255, 255, 255, 0.28)',
+                      'rgba(255, 255, 255, 0)',
+                    ]}
+                    style={styles.laserBeamGlow}
+                  />
+
+                  {/* Intense white laser line with edge beacons */}
+                  <View style={styles.laserLine}>
+                    <View style={styles.laserEndDot} />
+                    <View style={{ flex: 1 }} />
+                    <View style={styles.laserEndDot} />
+                  </View>
+                </Animated.View>
               </View>
             </View>
 
-            <View style={styles.headerActions}>
-              <TouchableOpacity
-                style={styles.circleBtn}
-                onPress={() => navigation.navigate('Rules')}
-                activeOpacity={0.8}
-              >
-                <Feather name="search" size={16} color="#fff" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.circleBtn}
-                onPress={() => navigation.navigate('Track')}
-                activeOpacity={0.8}
-              >
-                <Feather name="bell" size={16} color="#fff" />
-                <View style={styles.unreadDot} />
-              </TouchableOpacity>
+            {/* Aura Gold Inspired Compact Hero Punchline */}
+            <View style={styles.heroSentenceContainer}>
+              <Text style={styles.heroSentence}>
+                Check any package {'\n'}in{' '}
+                <Text style={styles.highlightWord}>1 tap</Text>
+              </Text>
             </View>
-          </View>
 
-          {/* Centered shield badge */}
-          <View style={styles.badgeWrap}>
-            <Image
-              source={require('../../assets/hero_scan_badge.jpg')}
-              style={styles.badgeImg}
-              resizeMode="contain"
-            />
-          </View>
+            {/* Clean White Scan Button (With barcode scan icon, zero drop shadow) */}
+            <Animated.View style={{ transform: [{ scale: scanPressAnim }] }}>
+              <TouchableOpacity
+                style={styles.whiteCompactScanBtn}
+                onPressIn={handleScanPressIn}
+                onPressOut={handleScanPressOut}
+                onPress={() => navigation.navigate('Scanner')}
+                activeOpacity={0.88}
+              >
+                <MaterialCommunityIcons
+                  name="barcode-scan"
+                  size={21}
+                  color={Colors.primary}
+                  style={{ marginRight: 8 }}
+                />
+                <Text style={styles.whiteCompactScanText}>Scan</Text>
+              </TouchableOpacity>
+            </Animated.View>
+          </LinearGradient>
+        </Animated.View>
 
-          {/* Hero headline */}
-          <Text style={styles.heroTitle}>Scan. Inspect. Protect.</Text>
-          <Text style={styles.heroSub}>
-            Enforce packaged commodity laws instantly
-          </Text>
-
-          {/* CTA */}
-          <Animated.View style={{ transform: [{ scale: scanPressAnim }] }}>
-            <TouchableOpacity
-              style={styles.whiteCta}
-              onPressIn={handleScanPressIn}
-              onPressOut={handleScanPressOut}
-              onPress={() => navigation.navigate('Scanner')}
-              activeOpacity={0.9}
-            >
-              <MaterialCommunityIcons
-                name="barcode-scan"
-                size={17}
-                color={Colors.almostBlack}
-                style={{ marginRight: 8 }}
-              />
-              <Text style={styles.ctaText}>Scan Product</Text>
-              <Feather
-                name="arrow-right"
-                size={15}
-                color={Colors.almostBlack}
-                style={{ marginLeft: 8 }}
-              />
-            </TouchableOpacity>
-          </Animated.View>
-        </LinearGradient>
-
-        {/* ── WHITE CONTENT SHEET ───────────────────────────── */}
+        {/* ── WHITE CONTENT SHEET (Overlaps and Scrolls Over Fixed Hero) ── */}
         <View style={styles.sheet}>
+          {/* Top Grab Handle / Navigation Bar Indicator */}
+          <View style={styles.handleBarContainer}>
+            <View style={styles.handleBar} />
+          </View>
 
           {/* Quick stats */}
           <View style={styles.statsRow}>
@@ -315,15 +622,38 @@ export default function HomeScreen({ navigation }: any) {
           </View>
 
         </View>
-      </ScrollView>
-    </SafeAreaView>
+      </Animated.ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#111118',
+    backgroundColor: Colors.primary,
+  },
+  stickyHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    elevation: 10,
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: 12,
+  },
+  whiteHeaderBg: {
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(13, 13, 18, 0.08)',
+    shadowColor: '#0D0D12',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  heroWrapper: {
+    zIndex: 1,
   },
   scrollContent: {
     paddingBottom: 110,
@@ -333,116 +663,215 @@ const styles = StyleSheet.create({
   hero: {
     paddingTop: Spacing.md,
     paddingHorizontal: Spacing.lg,
-    paddingBottom: 56,
+    paddingBottom: 70,
     alignItems: 'center',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  topLeftPatternContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 320,
+    height: 320,
+    zIndex: 0,
+  },
+  bottomRightPatternContainer: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 320,
+    height: 320,
+    zIndex: 0,
+  },
+  cornerPatternImg: {
+    width: '100%',
+    height: '100%',
+    opacity: 0.16,
+  },
+  mirroredPatternImg: {
+    transform: [{ scaleX: -1 }, { scaleY: -1 }],
   },
 
-  // Header row (inside hero, white text)
+  // Header row
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     width: '100%',
-    marginBottom: Spacing.lg,
   },
   headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  avatarPill: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(252, 146, 68, 0.14)',
-    alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(252, 146, 68, 0.28)',
+    position: 'relative',
   },
-  greeting: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.5)',
-    fontWeight: '400',
-  },
-  userName: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#fff',
-    letterSpacing: -0.3,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-  },
-  circleBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-  },
-  unreadDot: {
-    position: 'absolute',
-    top: 9,
-    right: 9,
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: Colors.primary,
-    borderWidth: 1.5,
-    borderColor: '#111118',
-  },
-
-  // Badge image
-  badgeWrap: {
-    width: 190,
-    height: 190,
-    marginBottom: Spacing.lg,
-  },
-  badgeImg: {
-    width: '100%',
-    height: '100%',
-  },
-
-  // Hero text
-  heroTitle: {
-    fontSize: 26,
+  greetingTitle: {
+    fontSize: 16,
     fontWeight: '700',
-    color: '#fff',
-    letterSpacing: -0.6,
-    textAlign: 'center',
-    marginBottom: 6,
-  },
-  heroSub: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.5)',
-    textAlign: 'center',
-    marginBottom: Spacing.xl,
-    letterSpacing: 0.1,
-  },
-
-  // White CTA button
-  whiteCta: {
-    backgroundColor: '#fff',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 28,
-    paddingVertical: 14,
-    borderRadius: Radii.full,
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 18,
-    elevation: 8,
-  },
-  ctaText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: Colors.almostBlack,
     letterSpacing: -0.2,
+  },
+  greetingTitleDark: {
+    color: Colors.textPrimary,
+  },
+  greetingTitleWhite: {
+    color: '#FFFFFF',
+    position: 'absolute',
+    left: 0,
+    top: 0,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  headerCircleBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    backgroundColor: 'rgba(255, 255, 255, 0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.95)',
+  },
+  redBadgeDot: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
+    backgroundColor: '#EF4444',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+
+  // Hero Sentence Container (~50-60% width, Aura Gold inspiration)
+  heroSentenceContainer: {
+    width: '70%',
+    maxWidth: 270,
+    alignSelf: 'center',
+    marginTop: 15,
+    marginBottom: 28,
+  },
+  heroSentence: {
+    fontSize: 27,
+    color: '#FFFFFF',
+    textAlign: 'center',
+    fontWeight: '800',
+    letterSpacing: -0.5,
+    lineHeight: 33,
+  },
+  highlightWord: {
+    color: '#fff314ff', // Electric Sky Cyan - high contrast pop against Orange
+    fontWeight: '900',
+  },
+
+  // Pure White Scan Button (Zero drop shadows, clean white pill with scan icon)
+  whiteCompactScanBtn: {
+    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    paddingHorizontal: 28,
+    paddingVertical: 8,
+    borderRadius: Radii.full,
+  },
+  whiteCompactScanText: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: Colors.primary,
+    letterSpacing: 0.2,
+  },
+
+  // ── Carousel Scanning (Scaled ~30% smaller) ─────────────────────────
+  carouselContainer: {
+    height: 145,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    marginTop: 6,
+    marginBottom: 20,
+    overflow: 'hidden',
+  },
+  carouselItem: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  productImage: {
+    width: 82,
+    height: 82,
+  },
+  scannerFrame: {
+    position: 'absolute',
+    width: 110,
+    height: 126,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 20,
+  },
+  laserAssembly: {
+    position: 'absolute',
+    top: 0,
+    left: 4,
+    right: 4,
+    alignItems: 'center',
+  },
+  laserBeamGlow: {
+    position: 'absolute',
+    top: -12,
+    left: 0,
+    right: 0,
+    height: 26,
+  },
+  laserLine: {
+    width: '100%',
+    height: 2.2,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#FFFFFF',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 6,
+    elevation: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 3,
+  },
+  laserEndDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#FFFFFF',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 3,
+  },
+
+  // ── Grab Handle / Navigation Bar Indicator ──────────
+  handleBarContainer: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 10,
+    paddingBottom: 8,
+  },
+  handleBar: {
+    width: 70,
+    height: 4.5,
+    borderRadius: 2.5,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(13, 13, 18, 0.06)',
+    shadowColor: '#0D0D12',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 1.5,
+    elevation: 1,
   },
 
   // ── White sheet overlapping hero ──────────────────────
@@ -450,21 +879,27 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.canvas,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    marginTop: -28,
-    paddingTop: Spacing.xl,
+    marginTop: -26,
+    paddingTop: 4,
     paddingHorizontal: Spacing.lg,
+    zIndex: 10,
+    elevation: 2,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    minHeight: 1000,
   },
 
-  // Quick stats
+  // Quick stats (Apple Liquid Glass - Zero Drop Shadow)
   statsRow: {
     flexDirection: 'row',
-    backgroundColor: Colors.white,
-    borderRadius: Radii.lg,
+    backgroundColor: 'rgba(255, 255, 255, 0.88)',
+    borderRadius: 22,
     paddingVertical: Spacing.md + 2,
     marginBottom: Spacing.xl,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    ...Shadows.soft,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.95)',
   },
   statItem: {
     flex: 1,
@@ -536,18 +971,17 @@ const styles = StyleSheet.create({
     color: Colors.primary,
   },
 
-  // Horizontal cards
+  // Horizontal cards (Liquid Glass - Zero Drop Shadow)
   horizontalScroll: {
     paddingRight: Spacing.lg,
     gap: Spacing.sm,
   },
   horizontalCard: {
     width: 220,
-    borderRadius: 18,
+    borderRadius: 22,
     padding: Spacing.md,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.8)',
-    ...Shadows.soft,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.95)',
   },
   hCardTop: {
     flexDirection: 'row',
@@ -606,23 +1040,23 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   hArrowCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    ...Shadows.soft,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.9)',
   },
 
-  // Pending cards
+  // Pending cards (Liquid Glass - Zero Drop Shadow)
   pendingCard: {
-    backgroundColor: Colors.white,
-    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.88)',
+    borderRadius: 22,
     padding: Spacing.md,
     marginBottom: Spacing.sm,
-    borderWidth: 1,
-    borderColor: 'rgba(13, 13, 18, 0.05)',
-    ...Shadows.soft,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.95)',
   },
   pendingCardTop: {
     flexDirection: 'row',

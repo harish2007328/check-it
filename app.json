@@ -3,6 +3,9 @@
     "name": "app",
     "slug": "app",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -27,7 +30,18 @@
     },
     "plugins": [
       "expo-font",
-      "expo-navigation-bar"
-    ]
+      "expo-navigation-bar",
+      "expo-updates"
+    ],
+    "extra": {
+      "expo-navigation-bar": {},
+      "eas": {
+        "projectId": "0f478a5e-6695-4da0-9e68-2a9ac106b256"
+      }
+    },
+    "owner": "harish2007328",
+    "updates": {
+      "url": "https://u.expo.dev/0f478a5e-6695-4da0-9e68-2a9ac106b256"
+    }
   }
 }
