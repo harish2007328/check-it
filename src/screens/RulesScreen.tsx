@@ -5,40 +5,70 @@ import {
   ScrollView,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   TextInput,
+  Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, Radii, Shadows } from '../theme/colors';
 import { RULES } from '../data/ruleEngine';
 
-const CATEGORIES = ['All Rules', 'Mandatory', 'Food Products', 'Perishables', 'Imports'];
+const CATEGORIES = [
+  'All Rules',
+  'Mandatory',
+  'Food & Beverages',
+  'Perishables',
+  'Imports',
+  'Critical (Penal)',
+  'Pricing & MRP',
+];
 
 export default function RulesScreen({ navigation }: any) {
+  const insets = useSafeAreaInsets();
   const [selectedCategory, setSelectedCategory] = useState('All Rules');
   const [search, setSearch] = useState('');
 
+  const statusBarHeight =
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : insets.top;
+  const topPadding = statusBarHeight + 10;
+
   const filteredRules = RULES.filter((rule) => {
+    const q = search.trim().toLowerCase();
     const matchesSearch =
-      rule.label.toLowerCase().includes(search.toLowerCase()) ||
-      rule.id.toLowerCase().includes(search.toLowerCase()) ||
-      rule.description.toLowerCase().includes(search.toLowerCase());
+      !q ||
+      rule.label.toLowerCase().includes(q) ||
+      rule.id.toLowerCase().includes(q) ||
+      rule.description.toLowerCase().includes(q) ||
+      rule.field.toLowerCase().includes(q);
 
     if (!matchesSearch) return false;
+
     if (selectedCategory === 'Mandatory') return rule.required;
-    if (selectedCategory === 'Food Products') return rule.field === 'fssaiLicense';
-    if (selectedCategory === 'Perishables') return rule.field === 'bestBefore' || rule.field === 'dateOfManufacture';
-    if (selectedCategory === 'Imports') return rule.field === 'countryOfOrigin';
+    if (selectedCategory === 'Food & Beverages') {
+      return ['fssaiLicense', 'bestBefore', 'dateOfManufacture', 'netQuantity', 'mrp', 'batchNo'].includes(rule.field);
+    }
+    if (selectedCategory === 'Perishables') {
+      return ['bestBefore', 'dateOfManufacture', 'netQuantity', 'batchNo'].includes(rule.field);
+    }
+    if (selectedCategory === 'Imports') {
+      return ['countryOfOrigin', 'manufacturer', 'address', 'unitSalePrice', 'mrp'].includes(rule.field);
+    }
+    if (selectedCategory === 'Critical (Penal)') {
+      return rule.severity === 'CRITICAL';
+    }
+    if (selectedCategory === 'Pricing & MRP') {
+      return ['mrp', 'unitSalePrice', 'netQuantity'].includes(rule.field);
+    }
     return true;
   });
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.canvas} />
+    <View style={styles.safe}>
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent={true} />
 
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: topPadding }]}>
         <View>
           <Text style={styles.headerTitle}>Legal Metrology Rules</Text>
           <Text style={styles.headerSub}>LM (Packaged Commodities) Rules 2011 / 2026.3</Text>
@@ -156,7 +186,7 @@ export default function RulesScreen({ navigation }: any) {
           </Text>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 

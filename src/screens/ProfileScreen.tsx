@@ -5,33 +5,39 @@ import {
   ScrollView,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   Switch,
   Alert,
+  Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, Radii, Shadows } from '../theme/colors';
 
 export default function ProfileScreen({ navigation }: any) {
+  const insets = useSafeAreaInsets();
   const [offlineOcr, setOfflineOcr] = useState(true);
   const [autoEvidence, setAutoEvidence] = useState(true);
   const [highRiskAlerts, setHighRiskAlerts] = useState(true);
 
+  const statusBarHeight =
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : insets.top;
+  const topPadding = statusBarHeight + 14;
+
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.canvas} />
+    <View style={styles.safe}>
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent={true} />
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: topPadding }]}
       >
         {/* Profile Card */}
         <View style={styles.profileCard}>
           <View style={styles.avatar}>
-            <Text style={styles.avatarInitials}>TS</Text>
+            <Text style={styles.avatarInitials}>H</Text>
           </View>
-          <Text style={styles.userName}>Turja Sen Das</Text>
+          <Text style={styles.userName}>Harish</Text>
           <Text style={styles.userRole}>Legal Metrology Officer · Zone 4</Text>
           <View style={styles.badgeRow}>
             <View style={styles.badgePill}>
@@ -134,7 +140,7 @@ export default function ProfileScreen({ navigation }: any) {
           </View>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 

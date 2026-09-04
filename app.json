@@ -10,7 +10,11 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow Check-It to access your camera to scan product packaging, verify MRP, and extract statutory declarations.",
+        "NSPhotoLibraryUsageDescription": "Allow Check-It to access your photo library to select product packaging images."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -23,7 +27,14 @@
       "navigationBarColor": "#111118",
       "navigationBarStyle": "light",
       "package": "com.harish2007328.app",
-      "edgeToEdge": false
+      "edgeToEdge": false,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -31,10 +42,23 @@
     "plugins": [
       "expo-font",
       "expo-navigation-bar",
-      "expo-updates"
+      "expo-updates",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Check-It to access your camera to scan product packaging, verify MRP, and extract statutory declarations."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Check-It to access your photo library to select product packaging images."
+        }
+      ]
     ],
     "extra": {
       "expo-navigation-bar": {},
+      "groqApiKey": "",
       "eas": {
         "projectId": "0f478a5e-6695-4da0-9e68-2a9ac106b256"
       }

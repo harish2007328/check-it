@@ -25,6 +25,8 @@ export interface ScanResult {
   productName: string;
   category: string;
   imageUri?: string;
+  images?: string[];
+  observations?: string[];
   fields: ComplianceField[];
   score: number;              // 0-100
   overallStatus: 'COMPLIANT' | 'NEEDS_REVIEW' | 'NON_COMPLIANT';

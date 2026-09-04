@@ -6,7 +6,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   Animated,
-  SafeAreaView,
   StatusBar,
   Platform,
   Image,

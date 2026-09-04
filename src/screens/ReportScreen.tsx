@@ -5,10 +5,12 @@ import {
   ScrollView,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   Alert,
+  Platform,
+  Image,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, Radii, Shadows } from '../theme/colors';
 import { ScanResult } from '../types';
@@ -17,12 +19,17 @@ import FieldCheckRow from '../components/FieldCheckRow';
 import StatusBadge from '../components/StatusBadge';
 
 export default function ReportScreen({ route, navigation }: any) {
+  const insets = useSafeAreaInsets();
   const scan: ScanResult = route.params?.scan ?? null;
   const [showAll, setShowAll] = useState(false);
 
+  const statusBarHeight =
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : insets.top;
+  const topPadding = statusBarHeight + 10;
+
   if (!scan) {
     return (
-      <SafeAreaView style={styles.safe}>
+      <View style={[styles.safe, { paddingTop: topPadding }]}>
         <View style={styles.emptyContainer}>
           <Feather name="file-text" size={48} color={Colors.textMuted} />
           <Text style={styles.emptyText}>No scan data found.</Text>
@@ -33,7 +40,7 @@ export default function ReportScreen({ route, navigation }: any) {
             <Text style={styles.btnPrimaryText}>Start New Scan</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -60,11 +67,11 @@ export default function ReportScreen({ route, navigation }: any) {
   const timeStr = date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.canvas} />
+    <View style={styles.safe}>
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent={true} />
 
       {/* ── Top Header Bar ──────────────────────────────────────── */}
-      <View style={styles.topNav}>
+      <View style={[styles.topNav, { paddingTop: topPadding }]}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           style={styles.circleBackBtn}
@@ -96,6 +103,9 @@ export default function ReportScreen({ route, navigation }: any) {
         {/* ── Product Hero Card (Pastel Porcelain) ────────────────── */}
         <View style={styles.productHeroCard}>
           <View style={styles.heroTop}>
+            {scan.imageUri ? (
+              <Image source={{ uri: scan.imageUri }} style={styles.heroThumbnail} resizeMode="cover" />
+            ) : null}
             <View style={styles.heroTextCol}>
               <View style={styles.idChip}>
                 <Text style={styles.idChipText}>{scan.id}</Text>
@@ -146,6 +156,46 @@ export default function ReportScreen({ route, navigation }: any) {
             </View>
           </View>
         </View>
+
+        {/* ── Multi-Panel Inspection Gallery ──────────────────────── */}
+        {scan.images && scan.images.length > 1 && (
+          <View style={styles.multiPanelGallery}>
+            <View style={styles.galleryHeaderRow}>
+              <Feather name="layers" size={14} color={Colors.primary} style={{ marginRight: 6 }} />
+              <Text style={styles.galleryHeaderTitle}>
+                Inspected Panels ({scan.images.length} Sides Captured)
+              </Text>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.galleryScrollContent}
+            >
+              {scan.images.map((imgUri, idx) => (
+                <View key={idx} style={styles.galleryPanelCard}>
+                  <Image source={{ uri: imgUri }} style={styles.galleryPanelImg} resizeMode="cover" />
+                  <Text style={styles.galleryPanelTag}>Side #{idx + 1}</Text>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* ── AI Compliance Observations ──────────────────────────── */}
+        {scan.observations && scan.observations.length > 0 && (
+          <View style={styles.aiObsCard}>
+            <View style={styles.aiObsHeader}>
+              <Feather name="cpu" size={15} color={Colors.primary} style={{ marginRight: 6 }} />
+              <Text style={styles.aiObsTitle}>AI Regulatory Compliance Audit</Text>
+            </View>
+            {scan.observations.map((obs, idx) => (
+              <View key={idx} style={styles.obsItemRow}>
+                <View style={styles.obsBullet} />
+                <Text style={styles.obsItemText}>{obs}</Text>
+              </View>
+            ))}
+          </View>
+        )}
 
         {/* ── Assessment Disclaimer Banner ────────────────────────── */}
         <View style={styles.noticeBanner}>
@@ -206,7 +256,7 @@ export default function ReportScreen({ route, navigation }: any) {
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -252,6 +302,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+  },
+  heroThumbnail: {
+    width: 64,
+    height: 64,
+    borderRadius: Radii.md,
+    backgroundColor: 'rgba(0, 0, 0, 0.06)',
+    marginRight: Spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.08)',
   },
   heroTextCol: {
     flex: 1,
@@ -418,5 +477,92 @@ const styles = StyleSheet.create({
     ...Typography.body,
     marginTop: Spacing.sm,
     marginBottom: Spacing.lg,
+  },
+
+  // ── Multi-Panel Inspection Gallery ──
+  multiPanelGallery: {
+    backgroundColor: Colors.white,
+    borderRadius: Radii.xl,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    ...Shadows.soft,
+  },
+  galleryHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+  },
+  galleryHeaderTitle: {
+    ...Typography.title,
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  galleryScrollContent: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    paddingVertical: 4,
+  },
+  galleryPanelCard: {
+    alignItems: 'center',
+  },
+  galleryPanelImg: {
+    width: 72,
+    height: 72,
+    borderRadius: Radii.md,
+    backgroundColor: 'rgba(0,0,0,0.06)',
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+  },
+  galleryPanelTag: {
+    ...Typography.caption,
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+    marginTop: 4,
+  },
+
+  // ── AI Compliance Audit Observations ──
+  aiObsCard: {
+    backgroundColor: Colors.chromeWhite,
+    borderRadius: Radii.xl,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(216, 232, 161, 0.6)',
+    ...Shadows.soft,
+  },
+  aiObsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.xs + 2,
+  },
+  aiObsTitle: {
+    ...Typography.title,
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  obsItemRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginVertical: 3,
+  },
+  obsBullet: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.primary,
+    marginTop: 6,
+    marginRight: 8,
+  },
+  obsItemText: {
+    ...Typography.body,
+    fontSize: 13,
+    lineHeight: 18,
+    color: Colors.textPrimary,
+    flex: 1,
   },
 });

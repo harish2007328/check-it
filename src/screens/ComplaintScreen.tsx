@@ -6,12 +6,12 @@ import {
   StyleSheet,
   TouchableOpacity,
   TextInput,
-  SafeAreaView,
   StatusBar,
   Alert,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Typography, Spacing, Radii, Shadows } from '../theme/colors';
@@ -20,7 +20,12 @@ import { ScanResult, Complaint } from '../types';
 const SEVERITY_OPTIONS = ['CRITICAL', 'HIGH', 'MEDIUM'] as const;
 
 export default function ComplaintScreen({ route, navigation }: any) {
+  const insets = useSafeAreaInsets();
   const scan: ScanResult = route.params?.scan;
+
+  const statusBarHeight =
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : insets.top;
+  const topPadding = statusBarHeight + 10;
 
   const fails = scan?.fields.filter((f) => f.status === 'FAIL') ?? [];
   const reviews = scan?.fields.filter((f) => f.status === 'REVIEW') ?? [];
@@ -101,11 +106,11 @@ export default function ComplaintScreen({ route, navigation }: any) {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.canvas} />
+    <View style={styles.safe}>
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent={true} />
 
       {/* ── Top Bar ────────────────────────────────────────── */}
-      <View style={styles.topNav}>
+      <View style={[styles.topNav, { paddingTop: topPadding }]}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           style={styles.circleBackBtn}
@@ -267,7 +272,7 @@ export default function ComplaintScreen({ route, navigation }: any) {
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 

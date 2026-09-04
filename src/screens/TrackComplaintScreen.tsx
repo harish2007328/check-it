@@ -5,11 +5,12 @@ import {
   ScrollView,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   TextInput,
   RefreshControl,
+  Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Typography, Spacing, Radii, Shadows } from '../theme/colors';
@@ -19,12 +20,17 @@ import StepTracker from '../components/StepTracker';
 import StatusBadge from '../components/StatusBadge';
 
 export default function TrackComplaintScreen({ route, navigation }: any) {
+  const insets = useSafeAreaInsets();
   const [complaints, setComplaints] = useState<Complaint[]>(MOCK_COMPLAINTS);
   const [selected, setSelected] = useState<Complaint | null>(
     route.params?.complaint ?? MOCK_COMPLAINTS[0]
   );
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+
+  const statusBarHeight =
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : insets.top;
+  const topPadding = statusBarHeight + 10;
 
   useEffect(() => {
     loadComplaints();
@@ -55,11 +61,11 @@ export default function TrackComplaintScreen({ route, navigation }: any) {
     : complaints;
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.canvas} />
+    <View style={styles.safe}>
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent={true} />
 
       {/* ── Header ─────────────────────────────────────────── */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: topPadding }]}>
         <View>
           <Text style={styles.headerTitle}>Case Tracking</Text>
           <Text style={styles.headerSub}>Legal Metrology Regulatory Complaints</Text>
@@ -196,7 +202,7 @@ export default function TrackComplaintScreen({ route, navigation }: any) {
           </View>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 

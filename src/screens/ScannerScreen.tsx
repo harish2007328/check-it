@@ -7,122 +7,276 @@ import {
   Animated,
   Alert,
   ActivityIndicator,
-  SafeAreaView,
   StatusBar,
   Platform,
+  Linking,
+  Image,
+  ScrollView,
+  Dimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Spacing, Radii, Typography, Shadows } from '../theme/colors';
-import { simulateScan } from '../data/mockScans';
+import { processOnDeviceOcr } from '../utils/onDeviceOcr';
+import { isGroqConfigured } from '../services/groqService';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+// Target 4:5 aspect ratio with enlarged framing dimensions
+const CAM_MAX_W = Math.min(Math.round(SCREEN_WIDTH * 0.92), 360);
+const CAM_MAX_H = Math.min(Math.round(CAM_MAX_W * 1.25), Math.round(SCREEN_HEIGHT * 0.49));
+const CAMERA_WIDTH = Math.round(CAM_MAX_H / 1.25);
+const CAMERA_HEIGHT = CAM_MAX_H;
 
 export default function ScannerScreen({ navigation }: any) {
-  const [scanning, setScanning] = useState(false);
-  const [status, setStatus] = useState('Align product label within the frame to verify MRP and Net Quantity.');
+  const insets = useSafeAreaInsets();
+  const [permission, requestPermission] = useCameraPermissions();
+  const cameraRef = useRef<CameraView>(null);
+
   const [flashOn, setFlashOn] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [panels, setPanels] = useState<string[]>([]);
+  const [status, setStatus] = useState('Position the packaged commodity label inside the 4:5 frame.');
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const trayAnim = useRef(new Animated.Value(0)).current;
+  const groqActive = isGroqConfigured();
+
+  const statusBarHeight =
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : insets.top;
+  const topPadding = statusBarHeight + 10;
+
+  // Auto-request permission on screen mount if not yet requested
+  useEffect(() => {
+    if (permission && !permission.granted && permission.canAskAgain) {
+      requestPermission();
+    }
+  }, [permission]);
 
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.03, duration: 1200, useNativeDriver: Platform.OS !== 'web' }),
+        Animated.timing(pulseAnim, { toValue: 1.025, duration: 1200, useNativeDriver: Platform.OS !== 'web' }),
         Animated.timing(pulseAnim, { toValue: 1, duration: 1200, useNativeDriver: Platform.OS !== 'web' }),
       ])
     ).start();
   }, []);
 
-  const startProcessing = async (uri: string) => {
+  // Smooth slide and fade animation for separate captured photo tray
+  useEffect(() => {
+    if (panels.length > 0) {
+      Animated.spring(trayAnim, {
+        toValue: 1,
+        friction: 8,
+        tension: 50,
+        useNativeDriver: Platform.OS !== 'web',
+      }).start();
+    } else {
+      Animated.timing(trayAnim, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver: Platform.OS !== 'web',
+      }).start();
+    }
+  }, [panels.length]);
+
+  const runInspection = async (targetPanels: string[]) => {
+    if (targetPanels.length === 0) return;
     setScanning(true);
-    setStatus('Reading label text...');
+    setStatus(`Extracting text across ${targetPanels.length} captured packaging angle(s)...`);
 
-    await new Promise((r) => setTimeout(r, 900));
-    setStatus('Extracting mandatory declarations...');
-    await new Promise((r) => setTimeout(r, 900));
-    setStatus('Checking Legal Metrology Rules (2026.3)...');
-
-    const result = await simulateScan(uri);
     try {
+      const { scanResult } = await processOnDeviceOcr(targetPanels, (stepMsg) => {
+        setStatus(stepMsg);
+      });
+
+      // Save to local inspection history
       const stored = await AsyncStorage.getItem('scans');
       const existing = stored ? JSON.parse(stored) : [];
-      await AsyncStorage.setItem('scans', JSON.stringify([result, ...existing]));
-    } catch {}
-    setScanning(false);
-    navigation.navigate('Report', { scan: result });
+      await AsyncStorage.setItem('scans', JSON.stringify([scanResult, ...existing]));
+
+      setScanning(false);
+      setPanels([]);
+      setStatus('Position packaged commodity label inside the frame. Snap multiple angles if needed.');
+
+      // Directly transition to the official white inspection report page
+      navigation.navigate('Report', { scan: scanResult });
+    } catch (err) {
+      console.warn('Scan verification error:', err);
+      Alert.alert(
+        'Inspection Incomplete',
+        'Could not clearly detect statutory declarations across the captured angles. Please ensure labels are well lit, in focus, and try again.'
+      );
+      setStatus('Position packaged commodity label inside the frame. Snap multiple angles if needed.');
+      setScanning(false);
+    }
   };
 
   const handleGallery = async () => {
+    if (scanning) return;
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       Alert.alert('Permission Required', 'Please allow access to your photo library.');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: 'images',
-      quality: 0.8,
+      mediaTypes: ['images'],
+      quality: 0.90,
+      allowsMultipleSelection: true,
     });
-    if (!result.canceled && result.assets[0]) {
-      startProcessing(result.assets[0].uri);
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      const newUris = result.assets.map((a) => a.uri);
+      const updated = [...panels, ...newUris];
+      setPanels(updated);
+      setStatus(
+        `${updated.length} angle(s) in tray. Snap more angles or tap "Inspect Product" below.`
+      );
     }
   };
 
-  const handleCamera = async () => {
-    const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert('Permission Required', 'Please allow camera access.');
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      quality: 0.8,
-    });
-    if (!result.canceled && result.assets[0]) {
-      startProcessing(result.assets[0].uri);
-    }
-  };
+  // Snaps a photo and adds it to the tray (allowing user to photograph multiple sides)
+  const handleSnapAngle = async () => {
+    if (scanning) return;
 
-  const handleDemoScan = () => {
-    startProcessing('demo://packaged-commodity');
+    let capturedUri: string | null = null;
+    if (cameraRef.current && permission?.granted) {
+      try {
+        const photo = await cameraRef.current.takePictureAsync({
+          quality: 0.90,
+          skipProcessing: true,
+          shutterSound: false,
+        });
+        if (photo?.uri) {
+          capturedUri = photo.uri;
+        }
+      } catch (err) {
+        console.warn('Camera capture error, falling back to picker:', err);
+      }
+    }
+
+    if (!capturedUri) {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert(
+          'Camera Permission Required',
+          'Please grant camera access to photograph packaging.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Grant', onPress: () => requestPermission() },
+          ]
+        );
+        return;
+      }
+      try {
+        const result = await ImagePicker.launchCameraAsync({ quality: 0.90 });
+        if (!result.canceled && result.assets[0]?.uri) {
+          capturedUri = result.assets[0].uri;
+        }
+      } catch (e) {
+        console.warn('ImagePicker camera error:', e);
+      }
+    }
+
+    if (capturedUri) {
+      const updated = [...panels, capturedUri];
+      setPanels(updated);
+    }
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.almostBlack} />
+    <View style={styles.safe}>
+      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" translucent={true} />
 
-      <View style={styles.viewfinder}>
-        {/* ── Top Bar ────────────────────────────────────────── */}
-        <View style={styles.topBar}>
-          <TouchableOpacity
-            style={styles.navCircleBtn}
-            onPress={() => navigation.goBack()}
-            activeOpacity={0.8}
-          >
-            <Feather name="arrow-left" size={20} color={Colors.white} />
-          </TouchableOpacity>
+      {/* ── Top Bar ── */}
+      <View style={[styles.topBar, { paddingTop: topPadding }]}>
+        <TouchableOpacity
+          style={styles.navCircleBtn}
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.8}
+        >
+          <Feather name="arrow-left" size={20} color="#0F172A" />
+        </TouchableOpacity>
 
-          <View style={styles.topBadge}>
-            <View style={styles.liveIndicator} />
-            <Text style={styles.topBadgeText}>AI OCR ACTIVE</Text>
-          </View>
-
-          <TouchableOpacity
-            style={[styles.navCircleBtn, flashOn && styles.navCircleBtnActive]}
-            onPress={() => setFlashOn(!flashOn)}
-            activeOpacity={0.8}
-          >
-            <Feather
-              name={flashOn ? 'zap' : 'zap-off'}
-              size={18}
-              color={flashOn ? Colors.primary : Colors.white}
-            />
-          </TouchableOpacity>
+        <View style={styles.topBarActions}>
+          {permission?.granted && (
+            <TouchableOpacity
+              style={[styles.navCircleBtn, flashOn && styles.navCircleBtnActive]}
+              onPress={() => setFlashOn(!flashOn)}
+              activeOpacity={0.8}
+            >
+              <Feather
+                name={flashOn ? 'zap' : 'zap-off'}
+                size={18}
+                color={flashOn ? Colors.primary : '#0F172A'}
+              />
+            </TouchableOpacity>
+          )}
         </View>
+      </View>
 
-        {/* ── Center Scanning Frame ───────────────────────────── */}
-        <View style={styles.frameCenterArea}>
-          <Animated.View style={[styles.frameWrapper, { transform: [{ scale: pulseAnim }] }]}>
-            <View style={styles.scanFrame}>
-              {/* Faded Orange Corner Brackets */}
+      {/* ── Camera Viewport: Positioned Upward with Bigger Size ── */}
+      <View style={styles.cameraViewportArea}>
+        {/* Prominent 3-Word Sentence */}
+        <Text style={styles.frameTopTitle}>Scan the package</Text>
+
+        {!permission?.granted ? (
+          /* ── Permission Request Card ── */
+          <View style={styles.permissionCard}>
+            <View style={styles.permissionIconCircle}>
+              <Feather name="camera" size={32} color={Colors.primary} />
+            </View>
+            <Text style={styles.permissionTitle}>Camera Access Required</Text>
+            <Text style={styles.permissionBody}>
+              Check-It needs access to your camera to scan product packaging and verify declarations.
+            </Text>
+
+            <TouchableOpacity
+              style={styles.permissionPrimaryBtn}
+              onPress={() => {
+                if (permission && !permission.canAskAgain) {
+                  Linking.openSettings();
+                } else {
+                  requestPermission();
+                }
+              }}
+              activeOpacity={0.85}
+            >
+              <Feather
+                name={permission && !permission.canAskAgain ? 'settings' : 'check-circle'}
+                size={18}
+                color={Colors.white}
+                style={{ marginRight: 8 }}
+              />
+              <Text style={styles.permissionPrimaryBtnText}>
+                {permission && !permission.canAskAgain ? 'Open System Settings' : 'Grant Camera Access'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.permissionFallbackBtn}
+              onPress={handleGallery}
+              activeOpacity={0.8}
+            >
+              <Feather name="image" size={15} color="#0F172A" style={{ marginRight: 6 }} />
+              <Text style={styles.permissionFallbackText}>Upload Photo</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          /* ── 4:5 Fixed Aspect Ratio Camera Container (Bigger, No Glitch) ── */
+          <View style={styles.cameraAspectBox}>
+            <CameraView
+              ref={cameraRef}
+              style={StyleSheet.absoluteFillObject}
+              facing="back"
+              enableTorch={flashOn}
+              animateShutter={false}
+            />
+
+            {/* Bigger Precision Centered Targeting Frame */}
+            <Animated.View style={[styles.scanFrame, { transform: [{ scale: pulseAnim }] }]}>
+              {/* 4 Precision Corner Brackets */}
               <View style={[styles.corner, styles.cornerTL]} />
               <View style={[styles.corner, styles.cornerTR]} />
               <View style={[styles.corner, styles.cornerBL]} />
@@ -134,57 +288,140 @@ export default function ScannerScreen({ navigation }: any) {
                 <View style={styles.framePlaceholder}>
                   <MaterialCommunityIcons
                     name="barcode-scan"
-                    size={42}
-                    color="rgba(252, 146, 68, 0.75)"
+                    size={46}
+                    color="rgba(252, 146, 68, 0.95)"
                   />
-                  <Text style={styles.framePlaceholderLabel}>Align Label Declarations</Text>
                 </View>
               )}
+            </Animated.View>
+          </View>
+        )}
+      </View>
+
+      {/* ── Bottom Section: Integrated Orange Tray + Controls Sheet ── */}
+      <View style={styles.bottomSectionContainer} pointerEvents="box-none">
+        {/* Vibrant Orange Tray (No Drop Shadow, Wider, Attached to Bottom Controls) */}
+        {panels.length > 0 && (
+          <Animated.View
+            style={[
+              styles.orangeTray,
+              {
+                opacity: trayAnim,
+                transform: [
+                  {
+                    translateY: trayAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [20, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <View style={styles.trayHeader}>
+              <Text style={styles.trayTitle}>
+                {panels.length} {panels.length === 1 ? 'Photo' : 'Photos'}
+              </Text>
+              <TouchableOpacity onPress={() => setPanels([])} activeOpacity={0.7}>
+                <Text style={styles.trayClearText}>Clear all</Text>
+              </TouchableOpacity>
             </View>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.trayScroll}
+            >
+              {panels.map((uri, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  style={styles.panelThumbBox}
+                  onPress={() => setPanels(panels.filter((_, i) => i !== idx))}
+                  activeOpacity={0.75}
+                >
+                  <Image source={{ uri }} style={styles.panelThumbImg} resizeMode="cover" />
+                  <View style={styles.panelDeleteBtn}>
+                    <Feather name="x" size={11} color={Colors.white} />
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </Animated.View>
-        </View>
+        )}
 
-        {/* ── Bottom Liquid Glass Control Sheet ──────────────── */}
+        {/* Bottom Controls Sheet */}
         <View style={styles.bottomSheet}>
-          <View style={styles.handleBar} />
+        {scanning ? (
+          <View style={styles.processingArea}>
+            <ActivityIndicator color={Colors.primary} size="large" />
+            <Text style={styles.processingTitle}>Verifying...</Text>
+            <Text style={styles.processingSub}>{status}</Text>
+          </View>
+        ) : (
+          <View style={styles.controlsRow}>
+            {/* Upload Photo button */}
+            <TouchableOpacity style={styles.sideBtn} onPress={handleGallery} activeOpacity={0.8}>
+              <View style={styles.sideBtnIconCircle}>
+                <Feather name="image" size={20} color="#0F172A" />
+              </View>
+              <Text style={styles.sideBtnLabel}>Upload</Text>
+            </TouchableOpacity>
 
-          <Text style={styles.statusInstruction}>{status}</Text>
-
-          {scanning ? (
-            <View style={styles.processingArea}>
-              <ActivityIndicator color={Colors.primary} size="large" />
-              <Text style={styles.processingTitle}>Evaluating Compliance</Text>
-              <Text style={styles.processingSub}>Cross-referencing 12 statutory clauses...</Text>
-            </View>
-          ) : (
-            <View style={styles.controlsRow}>
-              {/* Gallery button */}
-              <TouchableOpacity style={styles.sideBtn} onPress={handleGallery} activeOpacity={0.8}>
-                <View style={styles.sideBtnIconCircle}>
-                  <Feather name="image" size={20} color={Colors.white} />
+            {/* Center Shutter button */}
+            <TouchableOpacity
+              style={styles.shutterBtn}
+              onPress={handleSnapAngle}
+              activeOpacity={0.85}
+            >
+              <View style={styles.shutterOuter}>
+                <View style={styles.shutterInner}>
+                  <Feather name="camera" size={26} color={Colors.white} />
                 </View>
-                <Text style={styles.sideBtnLabel}>Gallery</Text>
-              </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
 
-              {/* Center Shutter button */}
-              <TouchableOpacity style={styles.shutterBtn} onPress={handleCamera} activeOpacity={0.85}>
-                <View style={styles.shutterOuter}>
-                  <View style={styles.shutterInner} />
-                </View>
-              </TouchableOpacity>
-
-              {/* Demo button */}
-              <TouchableOpacity style={styles.sideBtn} onPress={handleDemoScan} activeOpacity={0.8}>
-                <View style={[styles.sideBtnIconCircle, { backgroundColor: 'rgba(252, 146, 68, 0.25)' }]}>
-                  <Feather name="play" size={18} color={Colors.primary} />
-                </View>
-                <Text style={[styles.sideBtnLabel, { color: Colors.primary }]}>Demo Scan</Text>
-              </TouchableOpacity>
+            {/* Verify Action Button (Replaces Flip - Enabled upon capturing 1+ photo) */}
+            <TouchableOpacity
+              style={[styles.sideBtn, panels.length === 0 && styles.sideBtnDisabled]}
+              onPress={() => {
+                if (panels.length > 0) {
+                  runInspection(panels);
+                }
+              }}
+              disabled={panels.length === 0}
+              activeOpacity={0.8}
+            >
+              <View
+                style={[
+                  styles.sideBtnIconCircle,
+                  panels.length > 0 && styles.verifyBtnIconCircleActive,
+                ]}
+              >
+                <Feather
+                  name="check"
+                  size={22}
+                  color={panels.length > 0 ? Colors.white : '#94A3B8'}
+                />
+                {panels.length > 0 && (
+                  <View style={styles.verifyCountBadge}>
+                    <Text style={styles.verifyCountBadgeText}>{panels.length}</Text>
+                  </View>
+                )}
+              </View>
+              <Text
+                style={[
+                  styles.sideBtnLabel,
+                  panels.length > 0 && styles.verifyBtnLabelActive,
+                ]}
+              >
+                Verify
+              </Text>
+            </TouchableOpacity>
             </View>
           )}
         </View>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -194,8 +431,8 @@ function ScanLine() {
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
-        Animated.timing(anim, { toValue: 230, duration: 1400, useNativeDriver: Platform.OS !== 'web' }),
-        Animated.timing(anim, { toValue: 0, duration: 1400, useNativeDriver: Platform.OS !== 'web' }),
+        Animated.timing(anim, { toValue: 220, duration: 1300, useNativeDriver: Platform.OS !== 'web' }),
+        Animated.timing(anim, { toValue: 0, duration: 1300, useNativeDriver: Platform.OS !== 'web' }),
       ])
     ).start();
   }, []);
@@ -210,11 +447,7 @@ const CORNER_SIZE = 26;
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: Colors.almostBlack,
-  },
-  viewfinder: {
-    flex: 1,
-    backgroundColor: Colors.almostBlack,
+    backgroundColor: '#F8FAFC',
     justifyContent: 'space-between',
   },
   topBar: {
@@ -222,71 +455,86 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.md,
+    paddingTop: Spacing.xs,
+    paddingBottom: 4,
+    zIndex: 10,
+  },
+  topBarActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   navCircleBtn: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.18)',
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   navCircleBtnActive: {
-    backgroundColor: 'rgba(252, 146, 68, 0.25)',
+    backgroundColor: '#FFF7ED',
     borderColor: Colors.primary,
   },
-  topBadge: {
-    flexDirection: 'row',
+
+  // ── Camera Viewport (Positioned Higher with Bigger Frame) ──
+  cameraViewportArea: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: Radii.full,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    justifyContent: 'flex-start',
+    paddingTop: 8,
   },
-  liveIndicator: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: Colors.pass,
-    marginRight: 6,
+  frameTopTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: 0.3,
+    marginBottom: 10,
+    textAlign: 'center',
   },
-  topBadgeText: {
-    ...Typography.labelCaps,
-    color: Colors.white,
-    fontSize: 10,
-  },
-  frameCenterArea: {
+  cameraAspectBox: {
+    width: CAMERA_WIDTH,
+    height: CAMERA_HEIGHT,
+    borderRadius: 26,
+    overflow: 'hidden',
+    backgroundColor: '#000000',
     alignItems: 'center',
     justifyContent: 'center',
-    flex: 1,
-  },
-  frameWrapper: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 4,
   },
   scanFrame: {
-    width: 270,
-    height: 270,
+    width: Math.round(CAMERA_WIDTH * 0.90),
+    height: Math.round(CAMERA_HEIGHT * 0.85),
     position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.45)',
+    backgroundColor: 'rgba(0, 0, 0, 0.12)',
     overflow: 'hidden',
   },
   corner: {
     position: 'absolute',
-    width: CORNER_SIZE,
-    height: CORNER_SIZE,
+    width: 30,
+    height: 30,
     borderColor: Colors.primary,
   },
-  cornerTL: { top: 0, left: 0, borderTopWidth: 3, borderLeftWidth: 3, borderTopLeftRadius: 6 },
-  cornerTR: { top: 0, right: 0, borderTopWidth: 3, borderRightWidth: 3, borderTopRightRadius: 6 },
-  cornerBL: { bottom: 0, left: 0, borderBottomWidth: 3, borderLeftWidth: 3, borderBottomLeftRadius: 6 },
-  cornerBR: { bottom: 0, right: 0, borderBottomWidth: 3, borderRightWidth: 3, borderBottomRightRadius: 6 },
+  cornerTL: { top: -1, left: -1, borderTopWidth: 4.5, borderLeftWidth: 4.5, borderTopLeftRadius: 16 },
+  cornerTR: { top: -1, right: -1, borderTopWidth: 4.5, borderRightWidth: 4.5, borderTopRightRadius: 16 },
+  cornerBL: { bottom: -1, left: -1, borderBottomWidth: 4.5, borderLeftWidth: 4.5, borderBottomLeftRadius: 16 },
+  cornerBR: { bottom: -1, right: -1, borderBottomWidth: 4.5, borderRightWidth: 4.5, borderBottomRightRadius: 16 },
   scanLine: {
     position: 'absolute',
     top: 0,
@@ -296,81 +544,176 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 8,
+    shadowOpacity: 0.95,
+    shadowRadius: 10,
   },
   framePlaceholder: {
     alignItems: 'center',
+    paddingHorizontal: Spacing.sm,
   },
-  framePlaceholderLabel: {
-    ...Typography.caption,
-    color: 'rgba(255, 255, 255, 0.65)',
-    marginTop: 8,
+
+  // ── Bottom Container (Houses Vibrant Orange Tray and Bottom Controls Sheet) ──
+  bottomSectionContainer: {
+    width: '100%',
+    zIndex: 10,
   },
+
+  // ── Vibrant Orange Captured Photos Tray (No Drop Shadow, Wider, Attached to Bottom Controls) ──
+  orangeTray: {
+    backgroundColor: Colors.primary,
+    marginHorizontal: 16,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginBottom: 8,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  trayHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.25)',
+    marginBottom: 8,
+  },
+  trayTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
+  },
+  trayClearText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    opacity: 0.9,
+  },
+  trayScroll: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    gap: 12,
+  },
+  panelThumbBox: {
+    position: 'relative',
+    marginRight: 10,
+    overflow: 'visible',
+  },
+  panelThumbImg: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    backgroundColor: '#F1F5F9',
+  },
+  panelDeleteBtn: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    backgroundColor: '#0F172A',
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.8,
+    borderColor: '#FFFFFF',
+    zIndex: 10,
+  },
+
+  // ── Bottom Sheet (Elevated, Spacious, Lifted) ──
   bottomSheet: {
-    backgroundColor: Colors.almostBlackLight,
+    backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.sm,
-    paddingBottom: Spacing.xl,
+    paddingHorizontal: Spacing.xl,
+    paddingTop: 18,
+    paddingBottom: Platform.OS === 'ios' ? 44 : 34,
     borderTopWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    ...Shadows.glassIsland,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 8,
   },
-  handleBar: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-    alignSelf: 'center',
-    marginBottom: Spacing.md,
-  },
-  statusInstruction: {
-    ...Typography.body,
-    color: 'rgba(255, 255, 255, 0.8)',
-    textAlign: 'center',
-    marginBottom: Spacing.lg,
-    fontSize: 13,
-    lineHeight: 18,
-  },
+
+  // ── Bottom Controls Sheet (Generous Spacing & Upward Lift) ──
   processingArea: {
     alignItems: 'center',
-    paddingVertical: Spacing.md,
+    paddingVertical: Spacing.sm,
   },
   processingTitle: {
     ...Typography.title,
-    color: Colors.white,
-    marginTop: Spacing.sm,
+    color: '#0F172A',
+    marginTop: Spacing.xs,
+    fontSize: 16,
+    fontWeight: '700',
   },
   processingSub: {
     ...Typography.caption,
-    color: 'rgba(255, 255, 255, 0.6)',
-    marginTop: 3,
+    color: '#64748B',
+    marginTop: 4,
+    textAlign: 'center',
+    fontSize: 12,
   },
   controlsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    paddingBottom: Spacing.xs,
+    paddingVertical: 6,
   },
   sideBtn: {
     alignItems: 'center',
-    width: 72,
+    width: 68,
+  },
+  sideBtnDisabled: {
+    opacity: 0.55,
   },
   sideBtnIconCircle: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderColor: '#E2E8F0',
+  },
+  verifyBtnIconCircleActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+    ...Shadows.glowOrange,
+  },
+  verifyBtnLabelActive: {
+    color: Colors.primary,
+    fontWeight: '700',
+  },
+  verifyCountBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#0F172A',
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  verifyCountBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   sideBtnLabel: {
     ...Typography.caption,
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: '#475569',
     marginTop: 6,
     fontSize: 11,
     fontWeight: '600',
@@ -380,19 +723,97 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   shutterOuter: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    borderWidth: 3,
-    borderColor: Colors.white,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    borderWidth: 3.5,
+    borderColor: '#E2E8F0',
     alignItems: 'center',
     justifyContent: 'center',
   },
   shutterInner: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+    width: 62,
+    height: 62,
+    borderRadius: 31,
     backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
     ...Shadows.glowOrange,
+  },
+
+  // ── Camera Permission Request Card (Light Theme) ──
+  permissionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: Radii.xl,
+    padding: Spacing.lg,
+    alignItems: 'center',
+    width: '90%',
+    maxWidth: 360,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  permissionIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#FFF7ED',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(252, 146, 68, 0.3)',
+  },
+  permissionTitle: {
+    ...Typography.title,
+    color: '#0F172A',
+    fontSize: 17,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: Spacing.xs,
+  },
+  permissionBody: {
+    ...Typography.body,
+    color: '#64748B',
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginBottom: Spacing.md,
+  },
+  permissionPrimaryBtn: {
+    backgroundColor: Colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    paddingVertical: 12,
+    borderRadius: Radii.full,
+    marginBottom: Spacing.sm,
+    ...Shadows.glowOrange,
+  },
+  permissionPrimaryBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.white,
+    letterSpacing: 0.2,
+  },
+  permissionFallbackBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: Radii.md,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  permissionFallbackText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0F172A',
   },
 });
