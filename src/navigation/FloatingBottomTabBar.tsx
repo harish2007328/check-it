@@ -25,7 +25,7 @@ import { Colors } from '../theme/colors';
 // ─── Geometry constants ──────────────────────────────────────
 const BTN_DIAMETER = 64;
 const BTN_R = BTN_DIAMETER / 2;  // 32
-const BTN_LIFT = 4;               // button centre 4px above bar top
+const BTN_LIFT = -6;               // button centre 4px above bar top
 
 /**
  * The notch is drawn with 4 chained quadratic Béziers:
@@ -38,12 +38,13 @@ const BTN_LIFT = 4;               // button centre 4px above bar top
  * Q1 control stays at y=0 → horizontal departure from the bar, no kink.
  * Q2 control is at the floor depth → pulls the arc down to wrap the button.
  */
-const SW = 90;
-const Q1C_X = 54;
-const MX = 38;
-const MY = 22;  // pushed down
-const Q2C_X = 22;
-const FLOOR = 42;  // pushed down
+const SW = 100;
+const Q1C_X = 60
+  ;
+const MX = 40;
+const MY = 24;  // pushed down
+const Q2C_X = 24;
+const FLOOR = 48;  // pushed down
 // ────────────────────────────────────────────────────────────
 
 interface TabItemProps {
