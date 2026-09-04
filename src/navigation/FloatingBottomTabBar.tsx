@@ -39,8 +39,7 @@ const BTN_LIFT = -6;               // button centre 4px above bar top
  * Q2 control is at the floor depth → pulls the arc down to wrap the button.
  */
 const SW = 100;
-const Q1C_X = 60
-  ;
+const Q1C_X = 60;
 const MX = 40;
 const MY = 24;  // pushed down
 const Q2C_X = 24;
