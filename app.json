@@ -18,7 +18,9 @@
       },
       "predictiveBackGestureEnabled": false,
       "navigationBarColor": "#111118",
-      "navigationBarStyle": "light"
+      "navigationBarStyle": "light",
+      "package": "com.harish2007328.app",
+      "edgeToEdge": false
     },
     "web": {
       "favicon": "./assets/favicon.png"
