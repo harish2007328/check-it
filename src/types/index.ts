@@ -19,6 +19,18 @@ export interface ComplianceField {
   note?: string;
 }
 
+export interface FontReadabilityAudit {
+  declaredNetQuantity: string | null;
+  prescribedMinHeightMm: number;
+  estimatedFontHeightMm: number;
+  fontSizeCompliant: boolean;
+  contrastScore: number;
+  readabilityLevel: 'EXCELLENT' | 'ADEQUATE' | 'POOR_CONTRAST';
+  unitCompliant: boolean;
+  mrpFormatCompliant: boolean;
+  remarks: string[];
+}
+
 export interface ScanResult {
   id: string;                 // e.g. INS-2026-00124
   timestamp: string;          // ISO date
@@ -30,6 +42,7 @@ export interface ScanResult {
   fields: ComplianceField[];
   score: number;              // 0-100
   overallStatus: 'COMPLIANT' | 'NEEDS_REVIEW' | 'NON_COMPLIANT';
+  fontReadability?: FontReadabilityAudit;
 }
 
 export interface Complaint {

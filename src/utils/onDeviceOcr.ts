@@ -437,6 +437,7 @@ export async function processOnDeviceOcr(
     score: compliance.score,
     overallStatus: compliance.overallStatus,
     fields: compliance.fields,
+    fontReadability: compliance.fontReadability,
   };
 
   return {

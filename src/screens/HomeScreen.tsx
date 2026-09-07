@@ -9,6 +9,7 @@ import {
   StatusBar,
   Platform,
   Image,
+  TextInput,
 } from 'react-native';
 import Svg, {
   Defs,
@@ -24,7 +25,7 @@ import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Spacing, Radii, Shadows } from '../theme/colors';
-import { MOCK_SCANS, MOCK_COMPLAINTS } from '../data/mockScans';
+import { fetchScans, fetchComplaints } from '../utils/supabase';
 import { ScanResult, Complaint } from '../types';
 import StatusBadge from '../components/StatusBadge';
 
@@ -68,8 +69,28 @@ export default function HomeScreen({ navigation }: any) {
   const laserOpacity = useRef(new Animated.Value(0)).current;
   const conveyorAnim = useRef(new Animated.Value(0)).current;
   const scrollY = useRef(new Animated.Value(0)).current;
-  const [scans, setScans] = useState<ScanResult[]>(MOCK_SCANS);
-  const [complaints, setComplaints] = useState<Complaint[]>(MOCK_COMPLAINTS);
+  const [scans, setScans] = useState<ScanResult[]>([]);
+  const [complaints, setComplaints] = useState<Complaint[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'COMPLIANT' | 'NON_COMPLIANT' | 'NEEDS_REVIEW'>('ALL');
+
+  const compliantCount = scans.filter((s) => s.overallStatus === 'COMPLIANT').length;
+  const violationCount = scans.filter((s) => s.overallStatus === 'NON_COMPLIANT').length;
+  const reviewCount = scans.filter((s) => s.overallStatus === 'NEEDS_REVIEW').length;
+  const complianceRate = scans.length > 0 ? Math.round((compliantCount / scans.length) * 100) : 100;
+
+  const filteredScans = scans.filter((s) => {
+    const matchesSearch =
+      searchQuery.trim().length === 0 ||
+      s.productName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      s.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      s.id.toLowerCase().includes(searchQuery.toLowerCase());
+
+    const matchesStatus =
+      statusFilter === 'ALL' || s.overallStatus === statusFilter;
+
+    return matchesSearch && matchesStatus;
+  });
 
   const heroTranslateY = scrollY.interpolate({
     inputRange: [-500, 0, 4000],
@@ -155,22 +176,27 @@ export default function HomeScreen({ navigation }: any) {
     const scannerLoop = Animated.loop(Animated.sequence(stepAnimations));
     scannerLoop.start();
 
-    return () => scannerLoop.stop();
-  }, []);
+    const unsub = navigation.addListener?.('focus', () => {
+      loadData();
+    });
+
+    return () => {
+      scannerLoop.stop();
+      unsub?.();
+    };
+  }, [navigation]);
 
   const loadData = async () => {
     try {
-      const storedScans = await AsyncStorage.getItem('scans');
-      if (storedScans) {
-        const parsed: ScanResult[] = JSON.parse(storedScans);
-        if (parsed.length > 0) setScans([...parsed, ...MOCK_SCANS]);
-      }
-      const storedComplaints = await AsyncStorage.getItem('complaints');
-      if (storedComplaints) {
-        const parsedCmp: Complaint[] = JSON.parse(storedComplaints);
-        if (parsedCmp.length > 0) setComplaints([...parsedCmp, ...MOCK_COMPLAINTS]);
-      }
-    } catch { }
+      const [scansData, complaintsData] = await Promise.all([
+        fetchScans(),
+        fetchComplaints(),
+      ]);
+      setScans(scansData);
+      setComplaints(complaintsData);
+    } catch (err) {
+      console.warn('[Home] Error loading database data:', err);
+    }
   };
 
   const handleScanPressIn = () =>
@@ -229,6 +255,8 @@ export default function HomeScreen({ navigation }: any) {
 
   return (
     <View style={styles.safe}>
+      {/* Top Orange Background Anchor for overscroll */}
+      <View style={styles.topOverscrollAnchor} pointerEvents="none" />
       <DynamicStatusBar scrollY={scrollY} />
 
       {/* ── STICKY HEADER (Fixed at Top, Transitions to White on Scroll) ── */}
@@ -475,149 +503,386 @@ export default function HomeScreen({ navigation }: any) {
                   <Text style={styles.countBadgeText}>{complaints.length}</Text>
                 </View>
               </View>
-              <TouchableOpacity
-                onPress={() => navigation.navigate('Track')}
-                style={styles.linkBtn}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.linkBtnText}>Track all →</Text>
-              </TouchableOpacity>
+              {complaints.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => navigation.navigate('Track')}
+                  style={styles.linkBtn}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.linkBtnText}>Track all →</Text>
+                </TouchableOpacity>
+              )}
             </View>
 
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalScroll}
-            >
-              {complaints.map((item, index) => {
-                const isHigh = item.severity === 'HIGH' || item.severity === 'CRITICAL';
-                const cardBg = index % 2 === 0 ? Colors.porcelain : '#F3E8FF';
-                const accentColor = index % 2 === 0 ? '#0D9488' : '#7C3AED';
+            {complaints.length === 0 ? (
+              <View style={styles.emptyComplaintsBox}>
+                <View style={styles.emptyComplaintsIconCircle}>
+                  <Feather name="shield" size={22} color="#94A3B8" />
+                </View>
+                <Text style={styles.emptyComplaintsText}>
+                  Your registered complaints will be available here. Currently 0.
+                </Text>
+                <Text style={styles.emptyComplaintsSub}>
+                  When you scan product packaging and file notices for non-compliant declarations, their live status will be tracked here.
+                </Text>
+              </View>
+            ) : (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.horizontalScroll}
+              >
+                {complaints.map((item, index) => {
+                  const isHigh = item.severity === 'HIGH' || item.severity === 'CRITICAL';
+                  const cardBg = index % 2 === 0 ? Colors.porcelain : '#F3E8FF';
+                  const accentColor = index % 2 === 0 ? '#0D9488' : '#7C3AED';
 
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={[styles.horizontalCard, { backgroundColor: cardBg }]}
+                      onPress={() => navigation.navigate('Track', { complaint: item })}
+                      activeOpacity={0.88}
+                    >
+                      <View style={styles.hCardTop}>
+                        <View style={[styles.hCaseIdPill, { backgroundColor: Colors.white }]}>
+                          <Text style={[styles.hCaseIdText, { color: accentColor }]}>{item.id}</Text>
+                        </View>
+                        <StatusBadge
+                          status={item.status === 'RESOLVED' ? 'PASS' : isHigh ? 'FAIL' : 'REVIEW'}
+                          size="sm"
+                        />
+                      </View>
+                      <Text style={styles.hCardTitle} numberOfLines={1}>{item.productName}</Text>
+                      <Text style={styles.hCardCategory}>{item.category} Commodity</Text>
+                      <View style={styles.violationsTagContainer}>
+                        <Feather name="alert-triangle" size={11} color={accentColor} style={{ marginRight: 4 }} />
+                        <Text style={[styles.violationsSummary, { color: accentColor }]} numberOfLines={1}>
+                          {item.violations[0] || 'Declarations missing'}
+                        </Text>
+                      </View>
+                      <View style={styles.hCardFooter}>
+                        <View style={styles.officerRow}>
+                          <Feather name="shield" size={12} color={Colors.textSecondary} style={{ marginRight: 4 }} />
+                          <Text style={styles.officerText}>Jurisdiction Office</Text>
+                        </View>
+                        <View style={[styles.hArrowCircle, { backgroundColor: Colors.white }]}>
+                          <Feather name="chevron-right" size={14} color={accentColor} />
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+          </View>
+
+          {/* ── Pending Action (Drafts) - Only shown when pending items exist ── */}
+          {pendingScans.length > 0 && (
+            <View style={styles.sectionContainer}>
+              <View style={styles.sectionHeader}>
+                <View style={styles.sectionTitleRow}>
+                  <Text style={styles.sectionTitle}>Pending Action</Text>
+                  <View style={[styles.countBadge, { backgroundColor: Colors.failBg }]}>
+                    <Text style={[styles.countBadgeText, { color: Colors.fail }]}>
+                      {pendingScans.length}
+                    </Text>
+                  </View>
+                </View>
+                <TouchableOpacity onPress={() => navigation.navigate('Scanner')}>
+                  <Text style={styles.scanMoreLink}>+ New Scan</Text>
+                </TouchableOpacity>
+              </View>
+
+              {pendingScans.map((scan) => {
+                const isNonCompliant = scan.overallStatus === 'NON_COMPLIANT';
+                const failFields = scan.fields.filter((f) => f.status === 'FAIL');
                 return (
                   <TouchableOpacity
-                    key={item.id}
-                    style={[styles.horizontalCard, { backgroundColor: cardBg }]}
-                    onPress={() => navigation.navigate('Track', { complaint: item })}
-                    activeOpacity={0.88}
+                    key={scan.id}
+                    style={styles.pendingCard}
+                    onPress={() => navigation.navigate('Report', { scan })}
+                    activeOpacity={0.85}
                   >
-                    <View style={styles.hCardTop}>
-                      <View style={[styles.hCaseIdPill, { backgroundColor: Colors.white }]}>
-                        <Text style={[styles.hCaseIdText, { color: accentColor }]}>{item.id}</Text>
+                    <View style={styles.pendingCardTop}>
+                      <View style={styles.pendingLeftInfo}>
+                        <View style={styles.pendingIdRow}>
+                          <Text style={styles.pendingId}>{scan.id}</Text>
+                          <Text style={styles.pendingDot}>•</Text>
+                          <Text style={styles.pendingCategory}>{scan.category}</Text>
+                        </View>
+                        <Text style={styles.pendingProductName}>{scan.productName}</Text>
                       </View>
-                      <StatusBadge
-                        status={item.status === 'RESOLVED' ? 'PASS' : isHigh ? 'FAIL' : 'REVIEW'}
-                        size="sm"
-                      />
+                      <View
+                        style={[
+                          styles.scoreCircle,
+                          { backgroundColor: isNonCompliant ? Colors.failBg : Colors.reviewBg },
+                        ]}
+                      >
+                        <Text style={[styles.scoreText, { color: isNonCompliant ? Colors.fail : Colors.review }]}>
+                          {scan.score}%
+                        </Text>
+                      </View>
                     </View>
-                    <Text style={styles.hCardTitle} numberOfLines={1}>{item.productName}</Text>
-                    <Text style={styles.hCardCategory}>{item.category} Commodity</Text>
-                    <View style={styles.violationsTagContainer}>
-                      <Feather name="alert-triangle" size={11} color={accentColor} style={{ marginRight: 4 }} />
-                      <Text style={[styles.violationsSummary, { color: accentColor }]} numberOfLines={1}>
-                        {item.violations[0] || 'Declarations missing'}
-                      </Text>
-                    </View>
-                    <View style={styles.hCardFooter}>
-                      <View style={styles.officerRow}>
-                        <Feather name="shield" size={12} color={Colors.textSecondary} style={{ marginRight: 4 }} />
-                        <Text style={styles.officerText}>Jurisdiction Office</Text>
+
+                    <View style={styles.pendingDivider} />
+
+                    <View style={styles.pendingCardBottom}>
+                      <View style={styles.missingIssuesBox}>
+                        <Feather
+                          name="alert-circle"
+                          size={12}
+                          color={isNonCompliant ? Colors.fail : Colors.review}
+                          style={{ marginRight: 5 }}
+                        />
+                        <Text style={styles.missingIssuesText} numberOfLines={1}>
+                          {failFields.length > 0
+                            ? `${failFields.length} rule violation(s) detected`
+                            : 'Low confidence OCR requires review'}
+                        </Text>
                       </View>
-                      <View style={[styles.hArrowCircle, { backgroundColor: Colors.white }]}>
-                        <Feather name="chevron-right" size={14} color={accentColor} />
-                      </View>
+                      <TouchableOpacity
+                        style={[
+                          styles.fileNoticeBtn,
+                          { backgroundColor: isNonCompliant ? Colors.almostBlack : Colors.white },
+                        ]}
+                        onPress={() => navigation.navigate('Complaint', { scan })}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[styles.fileNoticeBtnText, { color: isNonCompliant ? Colors.white : Colors.textPrimary }]}>
+                          {isNonCompliant ? 'File Notice' : 'Verify'}
+                        </Text>
+                        <Feather
+                          name="arrow-up-right"
+                          size={12}
+                          color={isNonCompliant ? Colors.white : Colors.textPrimary}
+                          style={{ marginLeft: 3 }}
+                        />
+                      </TouchableOpacity>
                     </View>
                   </TouchableOpacity>
                 );
               })}
-            </ScrollView>
+            </View>
+          )}
+
+          {/* ── Enforcement Intelligence Analytics Dashboard ── */}
+          <View style={styles.dashboardSection}>
+            <View style={styles.dashboardCard}>
+              <View style={styles.dashboardHeaderRow}>
+                <View style={styles.dashboardHeaderLeft}>
+                  <View style={styles.dashboardIconCircle}>
+                    <Feather name="bar-chart-2" size={15} color="#0D9488" />
+                  </View>
+                  <View>
+                    <Text style={styles.dashboardBadgeTag}>ENFORCEMENT INTELLIGENCE</Text>
+                    <Text style={styles.dashboardTitle}>Compliance Monitoring</Text>
+                  </View>
+                </View>
+                <View style={styles.complianceIndexPill}>
+                  <Text style={styles.complianceIndexValue}>{complianceRate}%</Text>
+                  <Text style={styles.complianceIndexLabel}>PASSED</Text>
+                </View>
+              </View>
+
+              <View style={styles.dashboardMetricsGrid}>
+                <View style={styles.dashboardMetricItem}>
+                  <Text style={styles.dashMetricNum}>{scans.length}</Text>
+                  <Text style={styles.dashMetricLabel}>Inspections</Text>
+                </View>
+                <View style={styles.dashboardMetricDivider} />
+                <View style={styles.dashboardMetricItem}>
+                  <Text style={[styles.dashMetricNum, { color: Colors.pass }]}>{compliantCount}</Text>
+                  <Text style={styles.dashMetricLabel}>Compliant</Text>
+                </View>
+                <View style={styles.dashboardMetricDivider} />
+                <View style={styles.dashboardMetricItem}>
+                  <Text style={[styles.dashMetricNum, { color: violationCount > 0 ? Colors.fail : Colors.textPrimary }]}>
+                    {violationCount}
+                  </Text>
+                  <Text style={styles.dashMetricLabel}>Violations</Text>
+                </View>
+                <View style={styles.dashboardMetricDivider} />
+                <View style={styles.dashboardMetricItem}>
+                  <Text style={[styles.dashMetricNum, { color: Colors.primary }]}>{complaints.length}</Text>
+                  <Text style={styles.dashMetricLabel}>Notices</Text>
+                </View>
+              </View>
+
+              {/* Statutory Health Progress Bar */}
+              <View style={styles.healthBarTrack}>
+                <View
+                  style={[
+                    styles.healthBarFill,
+                    {
+                      width: `${Math.max(complianceRate, 4)}%`,
+                      backgroundColor:
+                        complianceRate >= 80 ? Colors.pass : complianceRate >= 50 ? Colors.primary : Colors.fail,
+                    },
+                  ]}
+                />
+              </View>
+            </View>
           </View>
 
-          {/* ── Pending Action (Drafts) ───────────────────── */}
+          {/* ── Search & Retrieval Inspection History Repository ── */}
           <View style={styles.sectionContainer}>
             <View style={styles.sectionHeader}>
               <View style={styles.sectionTitleRow}>
-                <Text style={styles.sectionTitle}>Pending Action</Text>
-                <View style={[styles.countBadge, { backgroundColor: Colors.failBg }]}>
-                  <Text style={[styles.countBadgeText, { color: Colors.fail }]}>
-                    {pendingScans.length}
-                  </Text>
+                <Text style={styles.sectionTitle}>Inspection Repository</Text>
+                <View style={styles.countBadge}>
+                  <Text style={styles.countBadgeText}>{filteredScans.length}</Text>
                 </View>
               </View>
-              <TouchableOpacity onPress={() => navigation.navigate('Scanner')}>
-                <Text style={styles.scanMoreLink}>+ New Scan</Text>
-              </TouchableOpacity>
+              {scans.length > 0 && (
+                <TouchableOpacity onPress={() => navigation.navigate('Scanner')}>
+                  <Text style={styles.scanMoreLink}>+ New Scan</Text>
+                </TouchableOpacity>
+              )}
             </View>
 
-            {pendingScans.map((scan) => {
-              const isNonCompliant = scan.overallStatus === 'NON_COMPLIANT';
-              const failFields = scan.fields.filter((f) => f.status === 'FAIL');
-              return (
-                <TouchableOpacity
-                  key={scan.id}
-                  style={styles.pendingCard}
-                  onPress={() => navigation.navigate('Report', { scan })}
-                  activeOpacity={0.85}
-                >
-                  <View style={styles.pendingCardTop}>
-                    <View style={styles.pendingLeftInfo}>
-                      <View style={styles.pendingIdRow}>
-                        <Text style={styles.pendingId}>{scan.id}</Text>
-                        <Text style={styles.pendingDot}>•</Text>
-                        <Text style={styles.pendingCategory}>{scan.category}</Text>
-                      </View>
-                      <Text style={styles.pendingProductName}>{scan.productName}</Text>
-                    </View>
-                    <View
-                      style={[
-                        styles.scoreCircle,
-                        { backgroundColor: isNonCompliant ? Colors.failBg : Colors.reviewBg },
-                      ]}
-                    >
-                      <Text style={[styles.scoreText, { color: isNonCompliant ? Colors.fail : Colors.review }]}>
-                        {scan.score}%
-                      </Text>
-                    </View>
-                  </View>
+            {/* Search Input Bar */}
+            {scans.length > 0 && (
+              <View style={styles.searchBarWrapper}>
+                <Feather name="search" size={15} color="#94A3B8" style={{ marginRight: 8 }} />
+                <TextInput
+                  placeholder="Search previously scanned commodities..."
+                  placeholderTextColor="#94A3B8"
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  style={styles.searchInputField}
+                  autoCapitalize="none"
+                  returnKeyType="search"
+                />
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Feather name="x-circle" size={15} color="#94A3B8" />
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
 
-                  <View style={styles.pendingDivider} />
-
-                  <View style={styles.pendingCardBottom}>
-                    <View style={styles.missingIssuesBox}>
-                      <Feather
-                        name="alert-circle"
-                        size={12}
-                        color={isNonCompliant ? Colors.fail : Colors.review}
-                        style={{ marginRight: 5 }}
-                      />
-                      <Text style={styles.missingIssuesText} numberOfLines={1}>
-                        {failFields.length > 0
-                          ? `${failFields.length} rule violation(s) detected`
-                          : 'Low confidence OCR requires review'}
-                      </Text>
-                    </View>
+            {/* Status Filter Chips */}
+            {scans.length > 0 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.filterChipsRow}
+              >
+                {(
+                  [
+                    { id: 'ALL', label: `All (${scans.length})` },
+                    { id: 'COMPLIANT', label: `Compliant (${compliantCount})` },
+                    { id: 'NON_COMPLIANT', label: `Violations (${violationCount})` },
+                    { id: 'NEEDS_REVIEW', label: `Review (${reviewCount})` },
+                  ] as const
+                ).map((chip) => {
+                  const isActive = statusFilter === chip.id;
+                  return (
                     <TouchableOpacity
-                      style={[
-                        styles.fileNoticeBtn,
-                        { backgroundColor: isNonCompliant ? Colors.almostBlack : Colors.white },
-                      ]}
-                      onPress={() => navigation.navigate('Complaint', { scan })}
+                      key={chip.id}
+                      style={[styles.filterChip, isActive && styles.filterChipActive]}
+                      onPress={() => setStatusFilter(chip.id)}
                       activeOpacity={0.8}
                     >
-                      <Text style={[styles.fileNoticeBtnText, { color: isNonCompliant ? Colors.white : Colors.textPrimary }]}>
-                        {isNonCompliant ? 'File Notice' : 'Verify'}
+                      <Text style={[styles.filterChipText, isActive && styles.filterChipTextActive]}>
+                        {chip.label}
                       </Text>
-                      <Feather
-                        name="arrow-up-right"
-                        size={12}
-                        color={isNonCompliant ? Colors.white : Colors.textPrimary}
-                        style={{ marginLeft: 3 }}
-                      />
                     </TouchableOpacity>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
+                  );
+                })}
+              </ScrollView>
+            )}
+
+            {/* Repository List or Empty States */}
+            {scans.length === 0 ? (
+              <View style={styles.emptyComplaintsBox}>
+                <View style={styles.emptyComplaintsIconCircle}>
+                  <Feather name="package" size={22} color="#94A3B8" />
+                </View>
+                <Text style={styles.emptyComplaintsText}>No scanned commodities in repository.</Text>
+                <Text style={styles.emptyComplaintsSub}>
+                  When you scan product packaging labels, their full Legal Metrology compliance records will be archived here.
+                </Text>
+              </View>
+            ) : filteredScans.length === 0 ? (
+              <View style={[styles.emptyComplaintsBox, { paddingVertical: 20 }]}>
+                <Feather name="search" size={20} color="#94A3B8" style={{ marginBottom: 6 }} />
+                <Text style={[styles.emptyComplaintsText, { fontSize: 13 }]}>
+                  No commodities found matching "{searchQuery}".
+                </Text>
+              </View>
+            ) : (
+              filteredScans.map((item) => {
+                const isPass = item.overallStatus === 'COMPLIANT';
+                const isFail = item.overallStatus === 'NON_COMPLIANT';
+                const statusBadgeBg = isPass ? '#DCFCE7' : isFail ? '#FEE2E2' : '#FEF3C7';
+                const statusBadgeText = isPass ? '#15803D' : isFail ? '#B91C1C' : '#B45309';
+                const dateText = new Date(item.timestamp).toLocaleDateString('en-IN', {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                });
+
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={styles.repoCard}
+                    onPress={() => navigation.navigate('Report', { scan: item })}
+                    activeOpacity={0.85}
+                  >
+                    <View style={styles.repoThumbnailBox}>
+                      {item.imageUri ? (
+                        <Image source={{ uri: item.imageUri }} style={styles.repoThumbnailImg} resizeMode="cover" />
+                      ) : (
+                        <Feather name="box" size={20} color="#94A3B8" />
+                      )}
+                    </View>
+                    <View style={styles.repoContentCol}>
+                      <View style={styles.repoTopRow}>
+                        <Text style={styles.repoIdText}>{item.id}</Text>
+                        <Text style={styles.repoDateText}>{dateText}</Text>
+                      </View>
+                      <Text style={styles.repoTitleText} numberOfLines={1}>
+                        {item.productName}
+                      </Text>
+                      <Text style={styles.repoCategoryText}>{item.category} Commodity</Text>
+                    </View>
+                    <View style={styles.repoRightCol}>
+                      <View style={[styles.repoScoreBadge, { backgroundColor: statusBadgeBg }]}>
+                        <Text style={[styles.repoScoreText, { color: statusBadgeText }]}>{item.score}%</Text>
+                      </View>
+                      <Feather name="chevron-right" size={16} color="#94A3B8" style={{ marginTop: 6 }} />
+                    </View>
+                  </TouchableOpacity>
+                );
+              })
+            )}
+          </View>
+
+          {/* ── Statutory Legal Metrology Advisory Notice Banner ── */}
+          <View style={styles.statutoryNoticeCard}>
+            <View style={styles.statutoryBadgeRow}>
+              <View style={styles.statutoryIconCircle}>
+                <Feather name="file-text" size={16} color={Colors.primary} />
+              </View>
+              <View style={styles.statutoryBadgeTextCol}>
+                <Text style={styles.statutoryBadgeTag}>OFFICIAL STATUTORY NOTICE</Text>
+                <Text style={styles.statutoryRuleTitle}>Legal Metrology (Packaged Commodities) Rules, 2011</Text>
+              </View>
+            </View>
+
+            <Text style={styles.statutoryNoticeParagraph}>
+              Under the Legal Metrology Act, 2009, it is mandatory for every pre-packaged commodity in India to display accurate MRP (inclusive of all taxes), Net Quantity, Date of Manufacture, and complete Consumer Care details. Selling above MRP or omitting declarations is a cognizable statutory offence.
+            </Text>
+
+            <View style={styles.statutoryHelplineBox}>
+              <View style={styles.helplinePhoneRow}>
+                <Feather name="phone-call" size={13} color="#0F172A" style={{ marginRight: 6 }} />
+                <Text style={styles.helplinePhoneText}>National Consumer Helpline: 1915</Text>
+              </View>
+              <Text style={styles.helplinePortalText}>consumerhelpline.gov.in</Text>
+            </View>
           </View>
 
         </View>
@@ -629,6 +894,14 @@ export default function HomeScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
+    backgroundColor: Colors.canvas,
+  },
+  topOverscrollAnchor: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 400,
     backgroundColor: Colors.primary,
   },
   stickyHeader: {
@@ -1135,5 +1408,331 @@ const styles = StyleSheet.create({
   fileNoticeBtnText: {
     fontSize: 11,
     fontWeight: '600',
+  },
+
+  // ── Empty Registered Complaints State ──
+  emptyComplaintsBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: Spacing.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginTop: 4,
+  },
+  emptyComplaintsIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  emptyComplaintsText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#334155',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  emptyComplaintsSub: {
+    fontSize: 11,
+    color: '#94A3B8',
+    textAlign: 'center',
+    lineHeight: 16,
+    paddingHorizontal: 12,
+  },
+
+  // ── Official Statutory Advisory Notice Card ──
+  statutoryNoticeCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: Spacing.lg,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    marginTop: Spacing.md,
+    marginBottom: Spacing.xl,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  statutoryBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  statutoryIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FFF7ED',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(252, 146, 68, 0.3)',
+  },
+  statutoryBadgeTextCol: {
+    flex: 1,
+  },
+  statutoryBadgeTag: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: Colors.primary,
+    letterSpacing: 0.5,
+  },
+  statutoryRuleTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginTop: 1,
+  },
+  statutoryNoticeParagraph: {
+    fontSize: 12,
+    color: '#64748B',
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  statutoryHelplineBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  helplinePhoneRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  helplinePhoneText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  helplinePortalText: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#64748B',
+    marginLeft: 19,
+  },
+
+  // ── Enforcement Intelligence Analytics Dashboard ──
+  dashboardSection: {
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.lg,
+  },
+  dashboardCard: {
+    backgroundColor: '#0F172A',
+    borderRadius: Radii.xl,
+    padding: Spacing.lg,
+    ...Shadows.medium,
+  },
+  dashboardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
+  dashboardHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  dashboardIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(13, 148, 136, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  dashboardBadgeTag: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#2DD4BF',
+    letterSpacing: 0.6,
+  },
+  dashboardTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginTop: 1,
+  },
+  complianceIndexPill: {
+    alignItems: 'flex-end',
+  },
+  complianceIndexValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#2DD4BF',
+  },
+  complianceIndexLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#94A3B8',
+    letterSpacing: 0.5,
+  },
+  dashboardMetricsGrid: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: Radii.md,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginVertical: 4,
+  },
+  dashboardMetricItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  dashMetricNum: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  dashMetricLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#94A3B8',
+    marginTop: 2,
+  },
+  dashboardMetricDivider: {
+    width: 1,
+    height: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  healthBarTrack: {
+    height: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 3,
+    marginTop: 12,
+    overflow: 'hidden',
+  },
+  healthBarFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+
+  // ── Search & Filter Repository ──
+  searchBarWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: Radii.lg,
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === 'ios' ? 10 : 6,
+    marginBottom: Spacing.sm,
+    ...Shadows.soft,
+  },
+  searchInputField: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.textPrimary,
+  },
+  filterChipsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingBottom: Spacing.sm,
+    marginBottom: 4,
+  },
+  filterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: Radii.full,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  filterChipActive: {
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
+  },
+  filterChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  filterChipTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+
+  // ── Repository Item Card ──
+  repoCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: Radii.lg,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    ...Shadows.soft,
+  },
+  repoThumbnailBox: {
+    width: 48,
+    height: 48,
+    borderRadius: Radii.sm,
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginRight: 12,
+  },
+  repoThumbnailImg: {
+    width: '100%',
+    height: '100%',
+  },
+  repoContentCol: {
+    flex: 1,
+  },
+  repoTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  repoIdText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.textMuted,
+  },
+  repoDateText: {
+    fontSize: 10,
+    color: Colors.textMuted,
+  },
+  repoTitleText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  repoCategoryText: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    marginTop: 1,
+  },
+  repoRightCol: {
+    alignItems: 'flex-end',
+    marginLeft: 8,
+  },
+  repoScoreBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Radii.full,
+  },
+  repoScoreText: {
+    fontSize: 11,
+    fontWeight: '800',
   },
 });

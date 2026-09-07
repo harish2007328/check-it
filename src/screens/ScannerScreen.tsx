@@ -13,6 +13,8 @@ import {
   Image,
   ScrollView,
   Dimensions,
+  Easing,
+  BackHandler,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -22,11 +24,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Spacing, Radii, Typography, Shadows } from '../theme/colors';
 import { processOnDeviceOcr } from '../utils/onDeviceOcr';
 import { isGroqConfigured } from '../services/groqService';
+import { saveScan } from '../utils/supabase';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 // Target 4:5 aspect ratio with enlarged framing dimensions
 const CAM_MAX_W = Math.min(Math.round(SCREEN_WIDTH * 0.92), 360);
-const CAM_MAX_H = Math.min(Math.round(CAM_MAX_W * 1.25), Math.round(SCREEN_HEIGHT * 0.49));
+const CAM_MAX_H = Math.min(Math.round(CAM_MAX_W * 1.25), Math.round(SCREEN_HEIGHT * 0.46));
 const CAMERA_WIDTH = Math.round(CAM_MAX_H / 1.25);
 const CAMERA_HEIGHT = CAM_MAX_H;
 
@@ -42,6 +45,8 @@ export default function ScannerScreen({ navigation }: any) {
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const trayAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const isClosing = useRef(false);
   const groqActive = isGroqConfigured();
 
   const statusBarHeight =
@@ -54,6 +59,40 @@ export default function ScannerScreen({ navigation }: any) {
       requestPermission();
     }
   }, [permission]);
+
+  // Smooth slide-up presentation animation from bottom to position on open
+  useEffect(() => {
+    Animated.spring(slideAnim, {
+      toValue: 0,
+      damping: 24,
+      mass: 0.9,
+      stiffness: 220,
+      useNativeDriver: Platform.OS !== 'web',
+    }).start();
+  }, []);
+
+  // Smooth slide-down animation on exit
+  const handleGoBack = () => {
+    if (isClosing.current) return;
+    isClosing.current = true;
+    Animated.timing(slideAnim, {
+      toValue: SCREEN_HEIGHT,
+      duration: 260,
+      easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+      useNativeDriver: Platform.OS !== 'web',
+    }).start(() => {
+      navigation.goBack();
+    });
+  };
+
+  // Intercept Android hardware back button and gesture shortcuts to play smooth slide down
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      handleGoBack();
+      return true;
+    });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     Animated.loop(
@@ -92,10 +131,12 @@ export default function ScannerScreen({ navigation }: any) {
         setStatus(stepMsg);
       });
 
-      // Save to local inspection history
-      const stored = await AsyncStorage.getItem('scans');
-      const existing = stored ? JSON.parse(stored) : [];
-      await AsyncStorage.setItem('scans', JSON.stringify([scanResult, ...existing]));
+      // Save to Supabase and local inspection history
+      try {
+        await saveScan(scanResult);
+      } catch (err) {
+        console.warn('Could not save scan to Supabase/cache:', err);
+      }
 
       setScanning(false);
       setPanels([]);
@@ -186,14 +227,21 @@ export default function ScannerScreen({ navigation }: any) {
   };
 
   return (
-    <View style={styles.safe}>
+    <Animated.View
+      style={[
+        styles.safe,
+        {
+          transform: [{ translateY: slideAnim }],
+        },
+      ]}
+    >
       <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" translucent={true} />
 
       {/* ── Top Bar ── */}
       <View style={[styles.topBar, { paddingTop: topPadding }]}>
         <TouchableOpacity
           style={styles.navCircleBtn}
-          onPress={() => navigation.goBack()}
+          onPress={handleGoBack}
           activeOpacity={0.8}
         >
           <Feather name="arrow-left" size={20} color="#0F172A" />
@@ -286,14 +334,24 @@ export default function ScannerScreen({ navigation }: any) {
                 <ScanLine />
               ) : (
                 <View style={styles.framePlaceholder}>
-                  <MaterialCommunityIcons
-                    name="barcode-scan"
-                    size={46}
-                    color="rgba(252, 146, 68, 0.95)"
+                  <Feather
+                    name="box"
+                    size={48}
+                    color="rgba(255, 255, 255, 0.45)"
                   />
                 </View>
               )}
             </Animated.View>
+          </View>
+        )}
+
+        {/* ── Grayed-out Hint with Info Icon (Visible only in initial empty state) ── */}
+        {panels.length === 0 && (
+          <View style={styles.frameHintRow}>
+            <Feather name="info" size={13} color="#94A3B8" style={styles.frameHintIcon} />
+            <Text style={styles.frameHintText}>
+              Take 3 or more photos of the package to get a clear output
+            </Text>
           </View>
         )}
       </View>
@@ -319,10 +377,18 @@ export default function ScannerScreen({ navigation }: any) {
             ]}
           >
             <View style={styles.trayHeader}>
-              <Text style={styles.trayTitle}>
-                {panels.length} {panels.length === 1 ? 'Photo' : 'Photos'}
-              </Text>
-              <TouchableOpacity onPress={() => setPanels([])} activeOpacity={0.7}>
+              <View style={styles.trayTitleContainer}>
+                <Feather name="layers" size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.trayTitle}>
+                  {panels.length} {panels.length === 1 ? 'Photo Captured' : 'Photos Captured'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.trayClearBtn}
+                onPress={() => setPanels([])}
+                activeOpacity={0.75}
+              >
+                <Feather name="trash-2" size={12} color="#DC2626" style={{ marginRight: 4 }} />
                 <Text style={styles.trayClearText}>Clear all</Text>
               </TouchableOpacity>
             </View>
@@ -330,20 +396,21 @@ export default function ScannerScreen({ navigation }: any) {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
+              style={styles.trayScrollView}
               contentContainerStyle={styles.trayScroll}
             >
               {panels.map((uri, idx) => (
-                <TouchableOpacity
-                  key={idx}
-                  style={styles.panelThumbBox}
-                  onPress={() => setPanels(panels.filter((_, i) => i !== idx))}
-                  activeOpacity={0.75}
-                >
+                <View key={idx} style={styles.panelThumbBox}>
                   <Image source={{ uri }} style={styles.panelThumbImg} resizeMode="cover" />
-                  <View style={styles.panelDeleteBtn}>
-                    <Feather name="x" size={11} color={Colors.white} />
-                  </View>
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.panelDeleteBtn}
+                    onPress={() => setPanels(panels.filter((_, i) => i !== idx))}
+                    activeOpacity={0.75}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Feather name="x" size={12} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
               ))}
             </ScrollView>
           </Animated.View>
@@ -421,7 +488,7 @@ export default function ScannerScreen({ navigation }: any) {
           )}
         </View>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -448,7 +515,6 @@ const styles = StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: '#F8FAFC',
-    justifyContent: 'space-between',
   },
   topBar: {
     flexDirection: 'row',
@@ -483,18 +549,19 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary,
   },
 
-  // ── Camera Viewport (Positioned Higher with Bigger Frame) ──
+  // ── Camera Viewport (Anchored Position - Stays Fixed at All Times) ──
   cameraViewportArea: {
     alignItems: 'center',
     justifyContent: 'flex-start',
-    paddingTop: 8,
+    paddingTop: 18,
   },
   frameTopTitle: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: '800',
     color: '#0F172A',
     letterSpacing: 0.3,
-    marginBottom: 10,
+    marginTop: 6,
+    marginBottom: 22,
     textAlign: 'center',
   },
   cameraAspectBox: {
@@ -513,28 +580,44 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
     elevation: 4,
   },
+  frameHintRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    marginTop: 32,
+    maxWidth: 250,
+    alignSelf: 'center',
+  },
+  frameHintIcon: {
+    marginRight: 6,
+    marginTop: 2.5,
+  },
+  frameHintText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#94A3B8',
+    textAlign: 'center',
+    lineHeight: 18,
+    letterSpacing: 0.1,
+    flexShrink: 1,
+  },
   scanFrame: {
     width: Math.round(CAMERA_WIDTH * 0.90),
     height: Math.round(CAMERA_HEIGHT * 0.85),
     position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.45)',
-    backgroundColor: 'rgba(0, 0, 0, 0.12)',
-    overflow: 'hidden',
   },
   corner: {
     position: 'absolute',
-    width: 30,
-    height: 30,
-    borderColor: Colors.primary,
+    width: 32,
+    height: 32,
+    borderColor: 'rgba(252, 146, 68, 0.72)',
   },
-  cornerTL: { top: -1, left: -1, borderTopWidth: 4.5, borderLeftWidth: 4.5, borderTopLeftRadius: 16 },
-  cornerTR: { top: -1, right: -1, borderTopWidth: 4.5, borderRightWidth: 4.5, borderTopRightRadius: 16 },
-  cornerBL: { bottom: -1, left: -1, borderBottomWidth: 4.5, borderLeftWidth: 4.5, borderBottomLeftRadius: 16 },
-  cornerBR: { bottom: -1, right: -1, borderBottomWidth: 4.5, borderRightWidth: 4.5, borderBottomRightRadius: 16 },
+  cornerTL: { top: 0, left: 0, borderTopWidth: 4, borderLeftWidth: 4, borderTopLeftRadius: 16 },
+  cornerTR: { top: 0, right: 0, borderTopWidth: 4, borderRightWidth: 4, borderTopRightRadius: 16 },
+  cornerBL: { bottom: 0, left: 0, borderBottomWidth: 4, borderLeftWidth: 4, borderBottomLeftRadius: 16 },
+  cornerBR: { bottom: 0, right: 0, borderBottomWidth: 4, borderRightWidth: 4, borderBottomRightRadius: 16 },
   scanLine: {
     position: 'absolute',
     top: 0,
@@ -552,22 +635,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
   },
 
-  // ── Bottom Container (Houses Vibrant Orange Tray and Bottom Controls Sheet) ──
+  // ── Bottom Container (Fixed at screen bottom so it never shifts the camera) ──
   bottomSectionContainer: {
-    width: '100%',
-    zIndex: 10,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
   },
 
-  // ── Vibrant Orange Captured Photos Tray (No Drop Shadow, Wider, Attached to Bottom Controls) ──
+  // ── Vibrant Orange Captured Photos Tray ──
   orangeTray: {
     backgroundColor: Colors.primary,
     marginHorizontal: 16,
     borderRadius: 20,
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingTop: 10,
+    paddingBottom: 10,
     marginBottom: 8,
     shadowOpacity: 0,
     elevation: 0,
+    overflow: 'hidden',
   },
   trayHeader: {
     flexDirection: 'row',
@@ -576,7 +664,11 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.25)',
-    marginBottom: 8,
+    marginBottom: 4,
+  },
+  trayTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   trayTitle: {
     fontSize: 13,
@@ -584,27 +676,47 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     letterSpacing: 0.2,
   },
+  trayClearBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#EF4444',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 2,
+  },
   trayClearText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    opacity: 0.9,
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#DC2626',
+    letterSpacing: 0.2,
+  },
+  trayScrollView: {
+    // Normal scrollview clipping so horizontally scrolled thumbnails stay inside the container
   },
   trayScroll: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 4,
+    paddingTop: 12,
+    paddingBottom: 8,
+    paddingLeft: 4,
+    paddingRight: 12,
     gap: 12,
   },
   panelThumbBox: {
     position: 'relative',
     marginRight: 10,
-    overflow: 'visible',
   },
   panelThumbImg: {
-    width: 56,
-    height: 56,
-    borderRadius: 12,
+    width: 58,
+    height: 58,
+    borderRadius: 13,
     borderWidth: 2,
     borderColor: '#FFFFFF',
     backgroundColor: '#F1F5F9',
@@ -613,15 +725,20 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -6,
     right: -6,
-    backgroundColor: '#0F172A',
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    backgroundColor: '#EF4444',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.8,
+    borderWidth: 2,
     borderColor: '#FFFFFF',
-    zIndex: 10,
+    zIndex: 999,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
   },
 
   // ── Bottom Sheet (Elevated, Spacious, Lifted) ──

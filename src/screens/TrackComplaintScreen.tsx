@@ -15,15 +15,15 @@ import { Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Typography, Spacing, Radii, Shadows } from '../theme/colors';
 import { Complaint } from '../types';
-import { MOCK_COMPLAINTS } from '../data/mockScans';
+import { fetchComplaints } from '../utils/supabase';
 import StepTracker from '../components/StepTracker';
 import StatusBadge from '../components/StatusBadge';
 
 export default function TrackComplaintScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
-  const [complaints, setComplaints] = useState<Complaint[]>(MOCK_COMPLAINTS);
+  const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [selected, setSelected] = useState<Complaint | null>(
-    route.params?.complaint ?? MOCK_COMPLAINTS[0]
+    route.params?.complaint ?? null
   );
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
@@ -34,16 +34,22 @@ export default function TrackComplaintScreen({ route, navigation }: any) {
 
   useEffect(() => {
     loadComplaints();
-  }, []);
+    const unsub = navigation.addListener?.('focus', () => {
+      loadComplaints();
+    });
+    return unsub;
+  }, [navigation]);
 
   const loadComplaints = async () => {
     try {
-      const data = await AsyncStorage.getItem('complaints');
-      if (data) {
-        const stored: Complaint[] = JSON.parse(data);
-        setComplaints([...stored, ...MOCK_COMPLAINTS]);
+      const data = await fetchComplaints();
+      setComplaints(data);
+      if (data.length > 0 && !selected) {
+        setSelected(data[0]);
       }
-    } catch {}
+    } catch (err) {
+      console.warn('Error loading complaints from Supabase:', err);
+    }
   };
 
   const onRefresh = async () => {
@@ -107,9 +113,29 @@ export default function TrackComplaintScreen({ route, navigation }: any) {
           />
         }
       >
-        {/* ── Horizontal / Vertical Case Selector ─────────────── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Active Dossiers ({filtered.length})</Text>
+        {complaints.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <View style={styles.emptyIconCircle}>
+              <Feather name="shield" size={32} color="#94A3B8" />
+            </View>
+            <Text style={styles.emptyTitle}>No Registered Complaints</Text>
+            <Text style={styles.emptySub}>
+              Your registered complaints will be available here. Currently 0. When you scan product packaging and file notices, their live tracking status will appear here.
+            </Text>
+            <TouchableOpacity
+              style={styles.emptyActionBtn}
+              onPress={() => navigation.navigate('Scanner')}
+              activeOpacity={0.85}
+            >
+              <Feather name="camera" size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Text style={styles.emptyActionBtnText}>Start New Scan</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <>
+            {/* ── Horizontal / Vertical Case Selector ─────────────── */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Active Dossiers ({filtered.length})</Text>
 
           {filtered.map((c) => {
             const active = selected?.id === c.id;
@@ -200,6 +226,8 @@ export default function TrackComplaintScreen({ route, navigation }: any) {
               <StepTracker steps={selected.steps} />
             </View>
           </View>
+        )}
+          </>
         )}
       </ScrollView>
     </View>
@@ -401,5 +429,57 @@ const styles = StyleSheet.create({
   },
   trackerWrapper: {
     marginTop: Spacing.sm,
+  },
+  emptyContainer: {
+    backgroundColor: Colors.white,
+    borderRadius: Radii.xl,
+    padding: Spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    ...Shadows.soft,
+  },
+  emptyIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.md,
+  },
+  emptyTitle: {
+    ...Typography.title,
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#0F172A',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  emptySub: {
+    ...Typography.body,
+    fontSize: 13,
+    lineHeight: 19,
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: Spacing.lg,
+  },
+  emptyActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: 12,
+    borderRadius: Radii.full,
+    ...Shadows.glowOrange,
+  },
+  emptyActionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

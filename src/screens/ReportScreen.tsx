@@ -9,11 +9,13 @@ import {
   Alert,
   Platform,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, Radii, Shadows } from '../theme/colors';
 import { ScanResult } from '../types';
+import { generateAndShareInspectionPdf } from '../utils/pdfReportGenerator';
 import ComplianceRing from '../components/ComplianceRing';
 import FieldCheckRow from '../components/FieldCheckRow';
 import StatusBadge from '../components/StatusBadge';
@@ -65,6 +67,18 @@ export default function ReportScreen({ route, navigation }: any) {
   const date = new Date(scan.timestamp);
   const dateStr = date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
   const timeStr = date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+
+  const [exportingPdf, setExportingPdf] = useState(false);
+
+  const handleExportPdf = async () => {
+    if (exportingPdf) return;
+    setExportingPdf(true);
+    try {
+      await generateAndShareInspectionPdf(scan);
+    } finally {
+      setExportingPdf(false);
+    }
+  };
 
   return (
     <View style={styles.safe}>
@@ -205,6 +219,98 @@ export default function ReportScreen({ route, navigation }: any) {
           </Text>
         </View>
 
+        {/* ── Rule 9 Font Height & Optical Readability Analysis ── */}
+        {scan.fontReadability && (
+          <View style={styles.fontAuditCard}>
+            <View style={styles.fontAuditHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Feather name="type" size={15} color={Colors.textPrimary} style={{ marginRight: 6 }} />
+                <Text style={styles.fontAuditTitle}>Rule 9 Font Height & Readability</Text>
+              </View>
+              <View
+                style={[
+                  styles.fontStatusPill,
+                  {
+                    backgroundColor: scan.fontReadability.fontSizeCompliant
+                      ? '#DCFCE7'
+                      : '#FEE2E2',
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.fontStatusPillText,
+                    {
+                      color: scan.fontReadability.fontSizeCompliant
+                        ? '#15803D'
+                        : '#B91C1C',
+                    },
+                  ]}
+                >
+                  {scan.fontReadability.fontSizeCompliant ? 'COMPLIANT' : 'NON-COMPLIANT'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.fontAuditGrid}>
+              <View style={styles.fontGridItem}>
+                <Text style={styles.fontGridLabel}>PRESCRIBED MIN.</Text>
+                <Text style={styles.fontGridValue}>{scan.fontReadability.prescribedMinHeightMm} mm</Text>
+              </View>
+              <View style={styles.fontGridItem}>
+                <Text style={styles.fontGridLabel}>ESTIMATED HEIGHT</Text>
+                <Text
+                  style={[
+                    styles.fontGridValue,
+                    {
+                      color: scan.fontReadability.fontSizeCompliant
+                        ? Colors.pass
+                        : Colors.fail,
+                    },
+                  ]}
+                >
+                  ~{scan.fontReadability.estimatedFontHeightMm} mm
+                </Text>
+              </View>
+              <View style={styles.fontGridItem}>
+                <Text style={styles.fontGridLabel}>CONTRAST SCORE</Text>
+                <Text style={styles.fontGridValue}>{scan.fontReadability.contrastScore}%</Text>
+              </View>
+              <View style={styles.fontGridItem}>
+                <Text style={styles.fontGridLabel}>METRIC UNIT</Text>
+                <Text
+                  style={[
+                    styles.fontGridValue,
+                    {
+                      color: scan.fontReadability.unitCompliant
+                        ? Colors.pass
+                        : Colors.fail,
+                    },
+                  ]}
+                >
+                  {scan.fontReadability.unitCompliant ? 'Statutory (Rule 13)' : 'Infringement'}
+                </Text>
+              </View>
+            </View>
+
+            {scan.fontReadability.remarks.length > 0 && (
+              <View style={styles.fontRemarksBox}>
+                {scan.fontReadability.remarks.map((rem, i) => (
+                  <View key={i} style={styles.fontRemarkRow}>
+                    <Feather
+                      name={scan.fontReadability?.fontSizeCompliant ? 'check-circle' : 'alert-triangle'}
+                      size={12}
+                      color={scan.fontReadability?.fontSizeCompliant ? Colors.pass : Colors.fail}
+                      style={{ marginRight: 6, marginTop: 2 }}
+                    />
+                    <Text style={styles.fontRemarkText}>{rem}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+
         {/* ── Field-by-Field Checklist ────────────────────────────── */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Mandatory Declarations</Text>
@@ -242,17 +348,19 @@ export default function ReportScreen({ route, navigation }: any) {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.btnSecondary}
-            onPress={() =>
-              Alert.alert(
-                'PDF Report Generated',
-                `Official Legal Metrology Inspection Certificate #${scan.id}\nScore: ${scan.score}/100\nDate: ${dateStr}\n\nEvidence dossier compiled.`
-              )
-            }
+            style={[styles.btnSecondary, exportingPdf && { opacity: 0.7 }]}
+            onPress={handleExportPdf}
+            disabled={exportingPdf}
             activeOpacity={0.85}
           >
-            <Feather name="download" size={16} color={Colors.textPrimary} style={{ marginRight: 8 }} />
-            <Text style={styles.btnSecondaryText}>Download PDF Certificate</Text>
+            {exportingPdf ? (
+              <ActivityIndicator size="small" color={Colors.primary} style={{ marginRight: 8 }} />
+            ) : (
+              <Feather name="download" size={16} color={Colors.textPrimary} style={{ marginRight: 8 }} />
+            )}
+            <Text style={styles.btnSecondaryText}>
+              {exportingPdf ? 'Compiling Official Certificate...' : 'Download PDF Certificate'}
+            </Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -563,6 +671,86 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     color: Colors.textPrimary,
+    flex: 1,
+  },
+
+  // ── Rule 9 Font Height & Readability Audit Card ──
+  fontAuditCard: {
+    backgroundColor: Colors.white,
+    borderRadius: Radii.xl,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    ...Shadows.soft,
+  },
+  fontAuditHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+    paddingBottom: Spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  fontAuditTitle: {
+    ...Typography.title,
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  fontStatusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Radii.full,
+  },
+  fontStatusPillText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  fontAuditGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginVertical: 4,
+  },
+  fontGridItem: {
+    flex: 1,
+    minWidth: '46%',
+    backgroundColor: '#F8FAFC',
+    borderRadius: Radii.sm,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  fontGridLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: Colors.textMuted,
+    letterSpacing: 0.4,
+    marginBottom: 2,
+  },
+  fontGridValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  fontRemarksBox: {
+    marginTop: Spacing.xs + 2,
+    paddingTop: Spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  fontRemarkRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginVertical: 2,
+  },
+  fontRemarkText: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    lineHeight: 16,
     flex: 1,
   },
 });

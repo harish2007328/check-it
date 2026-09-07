@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,12 +13,40 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, Radii, Shadows } from '../theme/colors';
+import { fetchScans, fetchComplaints } from '../utils/supabase';
 
 export default function ProfileScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const [offlineOcr, setOfflineOcr] = useState(true);
   const [autoEvidence, setAutoEvidence] = useState(true);
   const [highRiskAlerts, setHighRiskAlerts] = useState(true);
+  const [scansCount, setScansCount] = useState(0);
+  const [complaintsCount, setComplaintsCount] = useState(0);
+  const [complianceRateStr, setComplianceRateStr] = useState('100%');
+
+  const loadProfileStats = async () => {
+    try {
+      const [scans, complaints] = await Promise.all([fetchScans(), fetchComplaints()]);
+      setScansCount(scans.length);
+      setComplaintsCount(complaints.length);
+      if (scans.length > 0) {
+        const passed = scans.filter((s) => s.overallStatus === 'COMPLIANT').length;
+        setComplianceRateStr(`${((passed / scans.length) * 100).toFixed(1)}%`);
+      } else {
+        setComplianceRateStr('100%');
+      }
+    } catch (e) {
+      console.warn('[Profile] Error fetching stats:', e);
+    }
+  };
+
+  useEffect(() => {
+    loadProfileStats();
+    const unsub = navigation.addListener?.('focus', () => {
+      loadProfileStats();
+    });
+    return unsub;
+  }, [navigation]);
 
   const statusBarHeight =
     Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : insets.top;
@@ -53,15 +81,17 @@ export default function ProfileScreen({ navigation }: any) {
         {/* Inspection Stats */}
         <View style={styles.statsGrid}>
           <View style={[styles.statBox, { backgroundColor: Colors.porcelain }]}>
-            <Text style={styles.statNumber}>128</Text>
+            <Text style={styles.statNumber}>{scansCount}</Text>
             <Text style={styles.statLabel}>Total Scans</Text>
           </View>
           <View style={[styles.statBox, { backgroundColor: Colors.passBg }]}>
-            <Text style={[styles.statNumber, { color: Colors.pass }]}>94.2%</Text>
+            <Text style={[styles.statNumber, { color: Colors.pass }]}>{complianceRateStr}</Text>
             <Text style={styles.statLabel}>Compliance Rate</Text>
           </View>
           <View style={[styles.statBox, { backgroundColor: Colors.failBg }]}>
-            <Text style={[styles.statNumber, { color: Colors.fail }]}>13</Text>
+            <Text style={[styles.statNumber, { color: complaintsCount > 0 ? Colors.fail : Colors.textPrimary }]}>
+              {complaintsCount}
+            </Text>
             <Text style={styles.statLabel}>Violations Filed</Text>
           </View>
         </View>

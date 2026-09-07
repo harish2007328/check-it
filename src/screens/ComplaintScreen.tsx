@@ -16,6 +16,7 @@ import { Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Typography, Spacing, Radii, Shadows } from '../theme/colors';
 import { ScanResult, Complaint } from '../types';
+import { saveComplaint } from '../utils/supabase';
 
 const SEVERITY_OPTIONS = ['CRITICAL', 'HIGH', 'MEDIUM'] as const;
 
@@ -82,12 +83,9 @@ export default function ComplaintScreen({ route, navigation }: any) {
     };
 
     try {
-      const existing = await AsyncStorage.getItem('complaints');
-      const complaints: Complaint[] = existing ? JSON.parse(existing) : [];
-      complaints.unshift(complaint);
-      await AsyncStorage.setItem('complaints', JSON.stringify(complaints));
+      await saveComplaint(complaint);
     } catch (e) {
-      console.warn('Could not save complaint locally.');
+      console.warn('Could not save complaint to database/cache:', e);
     }
 
     setSubmitting(false);
@@ -98,9 +96,19 @@ export default function ComplaintScreen({ route, navigation }: any) {
       [
         {
           text: 'Track Status',
-          onPress: () => navigation.navigate('Track', { complaint }),
+          onPress: () =>
+            navigation.navigate('MainTabs', {
+              screen: 'Track',
+              params: { complaint },
+            }),
         },
-        { text: 'Done', onPress: () => navigation.navigate('Home') },
+        {
+          text: 'Done',
+          onPress: () =>
+            navigation.navigate('MainTabs', {
+              screen: 'Home',
+            }),
+        },
       ]
     );
   };

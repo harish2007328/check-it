@@ -54,7 +54,9 @@ export default function AppNavigator() {
           name="Scanner"
           component={ScannerScreen}
           options={{
-            animation: 'slide_from_bottom',
+            presentation: 'transparentModal',
+            animation: 'none',
+            contentStyle: { backgroundColor: 'transparent' },
           }}
         />
         <Stack.Screen name="Report" component={ReportScreen} />
