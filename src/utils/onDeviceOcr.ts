@@ -352,7 +352,9 @@ export async function processOnDeviceOcr(
       height || 1024
     );
 
-    croppedUris.push(croppedUri);
+    // Prefer persistent base64 data URI so images never expire or disappear across restarts/devices
+    const resolvedUri = base64 ? `data:image/jpeg;base64,${base64}` : (croppedUri || uri);
+    croppedUris.push(resolvedUri);
     if (i === 0) {
       primaryDimensions = cropDimensions;
     }
@@ -426,12 +428,14 @@ export async function processOnDeviceOcr(
 
   const compliance = runComplianceCheck(fields, isImported, isFoodCategory);
 
+  const primaryImageUri = croppedUris[0] || uris[0] || undefined;
+
   const scanResult: ScanResult = {
     id: `SCN-2026-${String(Date.now()).slice(-4)}`,
     productName,
     category,
-    imageUri: croppedUris[0] || '',
-    images: croppedUris,
+    imageUri: primaryImageUri,
+    images: croppedUris.length > 0 ? croppedUris : uris,
     observations,
     timestamp: new Date().toISOString(),
     score: compliance.score,
@@ -444,7 +448,7 @@ export async function processOnDeviceOcr(
     extracted: {
       rawText: allLines,
       fields,
-      croppedUri: croppedUris[0] || '',
+      croppedUri: primaryImageUri || '',
       cropDimensions: primaryDimensions,
       processingTimeMs,
     },

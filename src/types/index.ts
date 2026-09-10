@@ -50,6 +50,7 @@ export interface Complaint {
   scanId: string;
   productName: string;
   category: string;
+  imageUri?: string;
   violations: string[];
   notes: string;
   severity: 'CRITICAL' | 'HIGH' | 'MEDIUM';

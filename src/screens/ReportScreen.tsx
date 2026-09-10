@@ -10,12 +10,13 @@ import {
   Platform,
   Image,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, Radii, Shadows } from '../theme/colors';
 import { ScanResult } from '../types';
-import { generateAndShareInspectionPdf } from '../utils/pdfReportGenerator';
+import { generateAndShareInspectionPdf, exportReportData } from '../utils/pdfReportGenerator';
 import ComplianceRing from '../components/ComplianceRing';
 import FieldCheckRow from '../components/FieldCheckRow';
 import StatusBadge from '../components/StatusBadge';
@@ -69,6 +70,7 @@ export default function ReportScreen({ route, navigation }: any) {
   const timeStr = date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
 
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [exportModalVisible, setExportModalVisible] = useState(false);
 
   const handleExportPdf = async () => {
     if (exportingPdf) return;
@@ -78,6 +80,12 @@ export default function ReportScreen({ route, navigation }: any) {
     } finally {
       setExportingPdf(false);
     }
+  };
+
+  const handleExportFormat = async (format: 'csv' | 'json' | 'txt') => {
+    setExportModalVisible(false);
+    if (!scan) return;
+    await exportReportData(scan, format);
   };
 
   return (
@@ -117,8 +125,12 @@ export default function ReportScreen({ route, navigation }: any) {
         {/* ── Product Hero Card (Pastel Porcelain) ────────────────── */}
         <View style={styles.productHeroCard}>
           <View style={styles.heroTop}>
-            {scan.imageUri ? (
-              <Image source={{ uri: scan.imageUri }} style={styles.heroThumbnail} resizeMode="cover" />
+            {scan.imageUri || scan.images?.[0] ? (
+              <Image
+                source={{ uri: scan.imageUri || scan.images?.[0] }}
+                style={styles.heroThumbnail}
+                resizeMode="cover"
+              />
             ) : null}
             <View style={styles.heroTextCol}>
               <View style={styles.idChip}>
@@ -327,6 +339,33 @@ export default function ReportScreen({ route, navigation }: any) {
 
         {/* ── Action Buttons ──────────────────────────────────────── */}
         <View style={styles.actionsBox}>
+          {/* Primary Button: Download PDF Certificate */}
+          <TouchableOpacity
+            style={[styles.btnPrimaryDownload, exportingPdf && { opacity: 0.7 }]}
+            onPress={handleExportPdf}
+            disabled={exportingPdf}
+            activeOpacity={0.88}
+          >
+            {exportingPdf ? (
+              <ActivityIndicator size="small" color={Colors.white} style={{ marginRight: 8 }} />
+            ) : (
+              <Feather name="file-text" size={16} color={Colors.white} style={{ marginRight: 8 }} />
+            )}
+            <Text style={styles.btnPrimaryDownloadText}>
+              {exportingPdf ? 'Compiling Official Certificate...' : 'Download PDF Certificate'}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Extra Button: Export in Various Formats */}
+          <TouchableOpacity
+            style={styles.btnExportFormats}
+            onPress={() => setExportModalVisible(true)}
+            activeOpacity={0.85}
+          >
+            <Feather name="download" size={15} color={Colors.textPrimary} style={{ marginRight: 8 }} />
+            <Text style={styles.btnExportFormatsText}>Export in Various Formats</Text>
+          </TouchableOpacity>
+
           {hasViolations && (
             <TouchableOpacity
               style={styles.btnDanger}
@@ -339,31 +378,96 @@ export default function ReportScreen({ route, navigation }: any) {
           )}
 
           <TouchableOpacity
-            style={styles.btnPrimary}
+            style={styles.btnSecondary}
             onPress={() => navigation.navigate('Scanner')}
             activeOpacity={0.88}
           >
-            <Feather name="camera" size={16} color={Colors.white} style={{ marginRight: 8 }} />
-            <Text style={styles.btnPrimaryText}>Scan Another Product</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.btnSecondary, exportingPdf && { opacity: 0.7 }]}
-            onPress={handleExportPdf}
-            disabled={exportingPdf}
-            activeOpacity={0.85}
-          >
-            {exportingPdf ? (
-              <ActivityIndicator size="small" color={Colors.primary} style={{ marginRight: 8 }} />
-            ) : (
-              <Feather name="download" size={16} color={Colors.textPrimary} style={{ marginRight: 8 }} />
-            )}
-            <Text style={styles.btnSecondaryText}>
-              {exportingPdf ? 'Compiling Official Certificate...' : 'Download PDF Certificate'}
-            </Text>
+            <Feather name="camera" size={16} color={Colors.textPrimary} style={{ marginRight: 8 }} />
+            <Text style={styles.btnSecondaryText}>Scan Another Product</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* ── Export Multi-Format Modal ───────────────────────── */}
+      <Modal
+        visible={exportModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setExportModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setExportModalVisible(false)}
+        >
+          <View style={styles.modalSheet} onStartShouldSetResponder={() => true}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Export Inspection Audit Data</Text>
+            <Text style={styles.modalSub}>
+              Select format to export or share inspection declarations:
+            </Text>
+
+            <TouchableOpacity
+              style={styles.modalOptionCard}
+              onPress={() => handleExportFormat('csv')}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.modalOptionIcon, { backgroundColor: '#ECFDF5' }]}>
+                <Feather name="grid" size={18} color="#059669" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalOptionTitle}>CSV Spreadsheet (.csv)</Text>
+                <Text style={styles.modalOptionDesc}>
+                  Tabular data with field label, detected value, status & rule citations
+                </Text>
+              </View>
+              <Feather name="chevron-right" size={16} color="#94A3B8" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalOptionCard}
+              onPress={() => handleExportFormat('json')}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.modalOptionIcon, { backgroundColor: '#EFF6FF' }]}>
+                <Feather name="code" size={18} color="#2563EB" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalOptionTitle}>JSON Machine Data (.json)</Text>
+                <Text style={styles.modalOptionDesc}>
+                  Full structured audit payload for database or API intake
+                </Text>
+              </View>
+              <Feather name="chevron-right" size={16} color="#94A3B8" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalOptionCard}
+              onPress={() => handleExportFormat('txt')}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.modalOptionIcon, { backgroundColor: '#FFF7ED' }]}>
+                <Feather name="align-left" size={18} color="#EA580C" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalOptionTitle}>Plain Text Notice (.txt)</Text>
+                <Text style={styles.modalOptionDesc}>
+                  Formatted notice summary ready for email, SMS, or WhatsApp
+                </Text>
+              </View>
+              <Feather name="chevron-right" size={16} color="#94A3B8" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalCancelBtn}
+              onPress={() => setExportModalVisible(false)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -529,7 +633,8 @@ const styles = StyleSheet.create({
   },
   actionsBox: {
     marginTop: Spacing.lg,
-    gap: Spacing.sm,
+    gap: 10,
+    marginBottom: 40,
   },
   btnDanger: {
     backgroundColor: Colors.fail,
@@ -752,5 +857,114 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     lineHeight: 16,
     flex: 1,
+  },
+
+  // ── Extra Action Button Styles ──
+  btnPrimaryDownload: {
+    backgroundColor: Colors.almostBlack,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 15,
+    borderRadius: 14,
+    ...Shadows.soft,
+  },
+  btnPrimaryDownloadText: {
+    color: Colors.white,
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  btnExportFormats: {
+    backgroundColor: Colors.white,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 13,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#EAECF0',
+    ...Shadows.soft,
+  },
+  btnExportFormatsText: {
+    color: Colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+  // ── Export Modal ──
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 28,
+  },
+  modalHandle: {
+    width: 44,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#E2E8F0',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 4,
+  },
+  modalSub: {
+    fontSize: 12,
+    color: '#64748B',
+    marginBottom: 16,
+  },
+  modalOptionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#EAECF0',
+    marginBottom: 10,
+  },
+  modalOptionIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  modalOptionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 2,
+  },
+  modalOptionDesc: {
+    fontSize: 11,
+    color: '#64748B',
+    lineHeight: 15,
+  },
+  modalCancelBtn: {
+    marginTop: 6,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 14,
+  },
+  modalCancelText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#475569',
   },
 });

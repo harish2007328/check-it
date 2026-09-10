@@ -9,6 +9,7 @@ import {
   TextInput,
   RefreshControl,
   Platform,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -194,9 +195,26 @@ export default function TrackComplaintScreen({ route, navigation }: any) {
         {selected && (
           <View style={styles.dossierContainer}>
             <View style={styles.dossierHeader}>
-              <View>
-                <Text style={styles.dossierSubtitle}>ACTIVE INVESTIGATION</Text>
-                <Text style={styles.dossierTitle}>{selected.productName}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
+                {selected.imageUri ? (
+                  <Image
+                    source={{ uri: selected.imageUri }}
+                    style={{
+                      width: 46,
+                      height: 46,
+                      borderRadius: 8,
+                      marginRight: 12,
+                      borderWidth: 1,
+                      borderColor: '#CBD5E1',
+                      backgroundColor: '#FFFFFF',
+                    }}
+                    resizeMode="cover"
+                  />
+                ) : null}
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.dossierSubtitle}>ACTIVE INVESTIGATION</Text>
+                  <Text style={styles.dossierTitle} numberOfLines={1}>{selected.productName}</Text>
+                </View>
               </View>
               <View style={styles.dossierIdBadge}>
                 <Text style={styles.dossierIdBadgeText}>{selected.id}</Text>

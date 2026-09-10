@@ -11,10 +11,9 @@ const NAV_BAR_COLOR = '#111118';
 export default function App() {
   useEffect(() => {
     if (Platform.OS === 'android') {
-      // Match the system navigation bar to the app's bottom tab bar so they
-      // appear as one continuous surface on Android devices.
-      NavigationBar.setBackgroundColorAsync(NAV_BAR_COLOR);
-      NavigationBar.setButtonStyleAsync('light'); // white gesture handles / buttons
+      try {
+        NavigationBar.setStyle?.('light');
+      } catch {}
     }
   }, []);
 

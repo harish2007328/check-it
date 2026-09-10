@@ -54,7 +54,9 @@
         {
           "photosPermission": "Allow Check-It to access your photo library to select product packaging images."
         }
-      ]
+      ],
+      "expo-sharing",
+      "expo-status-bar"
     ],
     "extra": {
       "expo-navigation-bar": {},

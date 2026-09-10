@@ -15,7 +15,6 @@
     "noEmit": true,
     "jsx": "react-native",
     "module": "ESNext",
-    "baseUrl": ".",
     "paths": {},
     "types": [
       "react",

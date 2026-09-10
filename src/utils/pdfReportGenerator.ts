@@ -1,7 +1,8 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import { Alert, Platform } from 'react-native';
-import { ScanResult } from '../types';
+import { File, Paths } from 'expo-file-system';
+import { Alert, Platform, Share } from 'react-native';
+import { ScanResult, Complaint } from '../types';
 
 /**
  * Generates an official Government-standard Legal Metrology Compliance Inspection Report PDF
@@ -12,7 +13,11 @@ export async function generateAndShareInspectionPdf(scan: ScanResult): Promise<v
     const isCompliant = scan.overallStatus === 'COMPLIANT';
     const isNonCompliant = scan.overallStatus === 'NON_COMPLIANT';
     const statusColor = isCompliant ? '#16A34A' : isNonCompliant ? '#DC2626' : '#D97706';
-    const statusText = isCompliant ? 'COMPLIANT (PASSED)' : isNonCompliant ? 'NON-COMPLIANT (VIOLATION DETECTED)' : 'REQUIRES MANUAL REVIEW';
+    const statusText = isCompliant
+      ? 'COMPLIANT (PASSED)'
+      : isNonCompliant
+      ? 'NON-COMPLIANT (VIOLATION DETECTED)'
+      : 'REQUIRES MANUAL REVIEW';
 
     const fontAudit = scan.fontReadability;
     const fontStatus = fontAudit?.fontSizeCompliant ? 'COMPLIANT' : 'NON-COMPLIANT';
@@ -58,6 +63,20 @@ export async function generateAndShareInspectionPdf(scan: ScanResult): Promise<v
         </div>
       `
         : '';
+
+    const photoEvidenceHtml = scan.imageUri
+      ? `
+      <div style="margin-bottom: 20px; padding: 14px; background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; display: flex; gap: 16px; align-items: center;">
+        <img src="${scan.imageUri}" style="width: 140px; height: 140px; object-fit: cover; border-radius: 6px; border: 1px solid #CBD5E1; background: #FFFFFF;" alt="Captured Package Evidence" />
+        <div>
+          <div style="font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Photographic Package Evidence</div>
+          <div style="font-size: 13px; font-weight: 700; color: #0F172A; margin-top: 3px;">Original Package Label Capture</div>
+          <div style="font-size: 11px; color: #64748B; margin-top: 4px;">Captured and verified via Check-It On-Device Optical OCR Engine</div>
+          <div style="font-size: 11px; color: #0F172A; margin-top: 6px; font-family: monospace;">Ref: ${scan.id}</div>
+        </div>
+      </div>
+    `
+      : '';
 
     const html = `
       <!DOCTYPE html>
@@ -198,6 +217,9 @@ export async function generateAndShareInspectionPdf(scan: ScanResult): Promise<v
           <div class="doc-badge">Official Statutory Compliance Dossier</div>
         </div>
 
+        <!-- Evidence Photograph -->
+        ${photoEvidenceHtml}
+
         <!-- Metadata Grid -->
         <div class="meta-grid">
           <div class="meta-item">
@@ -284,19 +306,376 @@ export async function generateAndShareInspectionPdf(scan: ScanResult): Promise<v
       </html>
     `;
 
-    const { uri } = await Print.printToFileAsync({ html });
-
-    if (await Sharing.isAvailableAsync()) {
-      await Sharing.shareAsync(uri, {
-        UTI: '.pdf',
-        mimeType: 'application/pdf',
-        dialogTitle: `Legal Metrology Inspection Report - ${scan.productName}`,
-      });
-    } else {
-      Alert.alert('Report PDF Generated', `Inspection certificate saved to: ${uri}`);
-    }
+    // Directly launch Android's native "Save as PDF" / Print preview.
+    // This allows the user to immediately download/save the PDF directly to their device (Downloads/Drive)
+    // with zero permission errors in Expo Go or production builds.
+    await Print.printAsync({ html });
   } catch (err: any) {
     console.error('Error generating PDF report:', err);
-    Alert.alert('PDF Export Failed', err.message || 'Could not compile inspection PDF.');
+    Alert.alert('PDF Download Failed', err.message || 'Could not download inspection PDF.');
+  }
+}
+
+/**
+ * Generates an official Government Statutory Complaint & Non-Compliance Notice Dossier PDF
+ * for flagged/non-compliant products and registered complaints.
+ */
+export async function generateAndShareComplaintPdf(
+  complaint: Complaint,
+  scan?: ScanResult
+): Promise<void> {
+  try {
+    const photoUri = complaint.imageUri || scan?.imageUri;
+    const violationsList = complaint.violations && complaint.violations.length > 0
+      ? complaint.violations
+      : ['Statutory declarations omitted under Rule 6 of Packaged Commodities Rules, 2011'];
+
+    const photoEvidenceHtml = photoUri
+      ? `
+      <div style="margin-bottom: 20px; padding: 14px; background-color: #FEF2F2; border: 1.5px solid #F87171; border-radius: 8px; display: flex; gap: 16px; align-items: center;">
+        <img src="${photoUri}" style="width: 140px; height: 140px; object-fit: cover; border-radius: 6px; border: 1px solid #DC2626; background: #FFFFFF;" alt="Contravening Commodity Sample" />
+        <div>
+          <div style="font-size: 11px; font-weight: 800; color: #DC2626; text-transform: uppercase; letter-spacing: 0.5px;">Seized / Captured Commodity Evidence</div>
+          <div style="font-size: 13px; font-weight: 700; color: #7F1D1D; margin-top: 3px;">Packaged Commodity Sample Under Inspection</div>
+          <div style="font-size: 11px; color: #991B1B; margin-top: 4px;">Photographic evidence logged under Section 18 & 36 of Legal Metrology Act, 2009.</div>
+          <div style="font-size: 11px; color: #0F172A; margin-top: 6px; font-family: monospace;">Case Reference: ${complaint.id}</div>
+        </div>
+      </div>
+    `
+      : '';
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Legal Metrology Notice - ${complaint.id}</title>
+        <style>
+          @page { size: A4; margin: 20mm; }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: #0F172A;
+            margin: 0;
+            padding: 0;
+            line-height: 1.5;
+            font-size: 12px;
+          }
+          .header {
+            text-align: center;
+            border-bottom: 2px solid #DC2626;
+            padding-bottom: 16px;
+            margin-bottom: 20px;
+          }
+          .emblem-title {
+            font-size: 17px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            color: #991B1B;
+            text-transform: uppercase;
+            margin: 0 0 4px 0;
+          }
+          .emblem-sub {
+            font-size: 11px;
+            color: #475569;
+            margin: 0;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+          }
+          .doc-badge {
+            display: inline-block;
+            background-color: #DC2626;
+            color: #FFFFFF;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 1px;
+            padding: 5px 14px;
+            border-radius: 4px;
+            margin-top: 10px;
+            text-transform: uppercase;
+          }
+          .meta-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 20px;
+            background-color: #F8FAFC;
+            padding: 16px;
+            border-radius: 8px;
+            border: 1px solid #E2E8F0;
+          }
+          .meta-item {
+            font-size: 12px;
+          }
+          .meta-label {
+            font-weight: 600;
+            color: #64748B;
+            text-transform: uppercase;
+            font-size: 10px;
+          }
+          .meta-value {
+            font-weight: 700;
+            color: #0F172A;
+            margin-top: 2px;
+          }
+          .alert-box {
+            padding: 14px 18px;
+            border-radius: 8px;
+            border: 1.5px solid #DC2626;
+            background-color: #FEF2F2;
+            margin-bottom: 20px;
+          }
+          .alert-title {
+            font-size: 14px;
+            font-weight: 800;
+            color: #991B1B;
+            text-transform: uppercase;
+            margin: 0 0 6px 0;
+          }
+          .violations-list {
+            padding-left: 20px;
+            color: #7F1D1D;
+            font-size: 12px;
+            line-height: 1.7;
+          }
+          .observations-box {
+            background-color: #F8FAFC;
+            border: 1px solid #CBD5E1;
+            padding: 14px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+          }
+          .statutory-warning {
+            background-color: #FFFBEB;
+            border-left: 4px solid #F59E0B;
+            padding: 14px;
+            border-radius: 6px;
+            font-size: 11px;
+            color: #92400E;
+            line-height: 1.6;
+            margin-bottom: 24px;
+          }
+          .footer {
+            margin-top: 36px;
+            padding-top: 16px;
+            border-top: 1px solid #E2E8F0;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            font-size: 10px;
+            color: #64748B;
+          }
+          .seal-box {
+            text-align: center;
+            border: 1px dashed #DC2626;
+            padding: 10px 16px;
+            border-radius: 6px;
+            color: #991B1B;
+          }
+        </style>
+      </head>
+      <body>
+        <!-- Header -->
+        <div class="header">
+          <h1 class="emblem-title">Government of India • Legal Metrology Enforcement Division</h1>
+          <p class="emblem-sub">Department of Consumer Affairs • Legal Metrology Act, 2009 (Act No. 1 of 2010)</p>
+          <div class="doc-badge">FORM I — STATUTORY CONTRAVENTION DOSSIER</div>
+        </div>
+
+        <!-- Evidence Photograph -->
+        ${photoEvidenceHtml}
+
+        <!-- Metadata Grid -->
+        <div class="meta-grid">
+          <div class="meta-item">
+            <div class="meta-label">Notice Reference No.</div>
+            <div class="meta-value">${complaint.id}</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-label">Inspection Reference</div>
+            <div class="meta-value">${complaint.scanId || 'INS-PENDING'}</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-label">Filing Date & Time</div>
+            <div class="meta-value">${new Date(complaint.filedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-label">Enforcement Severity</div>
+            <div class="meta-value" style="color: #DC2626;">${complaint.severity} PRIORITY</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-label">Commodity / Item</div>
+            <div class="meta-value">${complaint.productName}</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-label">Product Category</div>
+            <div class="meta-value">${complaint.category}</div>
+          </div>
+        </div>
+
+        <!-- Flagged Offences Alert Box -->
+        <div class="alert-box">
+          <h3 class="alert-title">Prima Facie Statutory Infringements Detected</h3>
+          <ul class="violations-list">
+            ${violationsList.map((v) => `<li><strong>${v}</strong> (Contravention of Rule 6, Packaged Commodities Rules, 2011)</li>`).join('')}
+          </ul>
+        </div>
+
+        <!-- Inspector Observations -->
+        <div class="observations-box">
+          <div style="font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; margin-bottom: 6px;">
+            Inspector Observations & On-Site Verification Notes
+          </div>
+          <p style="margin: 0; font-size: 12px; color: #1E293B; line-height: 1.6;">
+            ${complaint.notes || 'Routine surveillance inspection revealed packaging non-compliant with standard statutory declarations.'}
+          </p>
+        </div>
+
+        <!-- Statutory Penalty Notice -->
+        <div class="statutory-warning">
+          <strong>LEGAL ADVISORY & STATUTORY NOTICE:</strong>
+          Pursuant to Section 36 of the Legal Metrology Act, 2009, whoever manufactures, packs, imports, sells, distributes, or exposes for sale any pre-packaged commodity not conforming to declarations specified in the rules shall be punishable with fine which may extend to ₹25,000 for the first offence, and up to ₹50,000 or imprisonment for subsequent offences.
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+          <div>
+            <p style="margin: 0; font-weight: 700; color: #0F172A;">Digital Regulatory Notice • Legal Metrology Surveillance</p>
+            <p style="margin: 2px 0 0 0;">Authenticated and dispatched to Jurisdictional Controller.</p>
+          </div>
+          <div class="seal-box">
+            <div style="font-weight: 800; font-size: 9px; text-transform: uppercase;">CONTROLLER OF LEGAL METROLOGY</div>
+            <div style="font-size: 8px;">GOVT. OF INDIA ENFORCEMENT</div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    // Directly launch Android's native "Save as PDF" / Print preview.
+    await Print.printAsync({ html });
+  } catch (err: any) {
+    console.error('Error generating complaint notice PDF:', err);
+    Alert.alert('PDF Download Failed', err.message || 'Could not download complaint notice PDF.');
+  }
+}
+
+/**
+ * Export scan inspection data in alternative formats: CSV, JSON, or Plain Text
+ */
+export async function exportReportData(
+  scan: ScanResult,
+  format: 'csv' | 'json' | 'txt'
+): Promise<void> {
+  try {
+    let content = '';
+    let fileName = '';
+    let mimeType = 'text/plain';
+    let uti = 'public.plain-text';
+
+    if (format === 'csv') {
+      fileName = `Inspection_${scan.id}.csv`;
+      mimeType = 'text/csv';
+      uti = 'public.comma-separated-values-text';
+
+      const csvRows = [
+        ['Check-It Legal Metrology Compliance Inspection Audit Data'],
+        ['Inspection Reference', scan.id],
+        ['Timestamp', scan.timestamp],
+        ['Commodity Title', `"${scan.productName.replace(/"/g, '""')}"`],
+        ['Category', scan.category],
+        ['Overall Compliance Score', `${scan.score}%`],
+        ['Statutory Determination', scan.overallStatus],
+        [],
+        ['Requirement', 'Detected On Label', 'Status', 'Confidence', 'Rule Reference'],
+      ];
+
+      scan.fields.forEach((f) => {
+        csvRows.push([
+          `"${f.label.replace(/"/g, '""')}"`,
+          `"${(f.detected || 'Not Detected').replace(/"/g, '""')}"`,
+          f.status,
+          `${Math.round(f.confidence * 100)}%`,
+          f.ruleId || 'Rule 6',
+        ]);
+      });
+
+      if (scan.observations && scan.observations.length > 0) {
+        csvRows.push([]);
+        csvRows.push(['Enforcement Observations']);
+        scan.observations.forEach((obs) => {
+          csvRows.push([`"${obs.replace(/"/g, '""')}"`]);
+        });
+      }
+
+      content = csvRows.map((r) => r.join(',')).join('\n');
+    } else if (format === 'json') {
+      fileName = `Inspection_${scan.id}.json`;
+      mimeType = 'application/json';
+      uti = 'public.json';
+      content = JSON.stringify(scan, null, 2);
+    } else {
+      // Plain text notice summary
+      fileName = `Notice_${scan.id}.txt`;
+      mimeType = 'text/plain';
+      uti = 'public.plain-text';
+
+      const missingFields = scan.fields.filter((f) => f.status === 'FAIL');
+      content = [
+        '================================================================',
+        'LEGAL METROLOGY STATUTORY INSPECTION DOSSIER',
+        'Department of Consumer Affairs, Government of India',
+        '================================================================',
+        `Reference ID      : ${scan.id}`,
+        `Date & Time       : ${new Date(scan.timestamp).toLocaleString('en-IN')}`,
+        `Commodity Title   : ${scan.productName}`,
+        `Category          : ${scan.category}`,
+        `Determination     : ${scan.overallStatus}`,
+        `Compliance Score  : ${scan.score}%`,
+        '----------------------------------------------------------------',
+        'MANDATORY DECLARATIONS AUDIT (Rule 6):',
+        ...scan.fields.map(
+          (f) => ` • [${f.status}] ${f.label.padEnd(25)} : ${f.detected || 'MISSING'}`
+        ),
+        '----------------------------------------------------------------',
+        missingFields.length > 0
+          ? `STATUTORY CONTRAVENTIONS (${missingFields.length} FOUND):\n` +
+            missingFields.map((f) => ` - Missing mandatory declaration: ${f.label}`).join('\n')
+          : 'All mandatory packaging declarations verified pursuant to PCR 2011.',
+        '----------------------------------------------------------------',
+        'Generated via Check-It Legal Metrology AI Engine',
+        '================================================================',
+      ].join('\n');
+    }
+
+    if (Platform.OS !== 'web') {
+      try {
+        const file = new File(Paths.cache, fileName);
+        file.create({ overwrite: true });
+        file.write(content);
+
+        const shareUri = file.uri;
+
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(shareUri, {
+            mimeType,
+            UTI: uti,
+            dialogTitle: `Export Inspection Data (${format.toUpperCase()})`,
+          });
+          return;
+        }
+      } catch (fileErr) {
+        console.warn('File share issue, falling back to text share:', fileErr);
+      }
+    }
+
+    // Fallback if file sharing is unavailable or on web
+    await Share.share({
+      message: content,
+      title: `Inspection Export - ${scan.productName}`,
+    });
+  } catch (err: any) {
+    console.error(`Export failed for format ${format}:`, err);
+    Alert.alert('Export Failed', err.message || 'Could not export file.');
   }
 }

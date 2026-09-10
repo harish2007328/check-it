@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  Pressable,
   Animated,
   Alert,
   ActivityIndicator,
@@ -42,6 +43,11 @@ export default function ScannerScreen({ navigation }: any) {
   const [scanning, setScanning] = useState(false);
   const [panels, setPanels] = useState<string[]>([]);
   const [status, setStatus] = useState('Position the packaged commodity label inside the 4:5 frame.');
+
+  // Tap-to-focus state
+  const [focusPoint, setFocusPoint] = useState<{ x: number; y: number } | null>(null);
+  const focusScale = useRef(new Animated.Value(1.4)).current;
+  const focusOpacity = useRef(new Animated.Value(0)).current;
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const trayAnim = useRef(new Animated.Value(0)).current;
@@ -121,6 +127,35 @@ export default function ScannerScreen({ navigation }: any) {
     }
   }, [panels.length]);
 
+  // Tap-to-focus handler: shows animated focus square at tap position
+  const handleFocusTap = (evt: any) => {
+    const { locationX, locationY } = evt.nativeEvent;
+    setFocusPoint({ x: locationX, y: locationY });
+
+    // Reset and run the focus indicator animation
+    focusScale.setValue(1.4);
+    focusOpacity.setValue(1);
+
+    Animated.parallel([
+      Animated.spring(focusScale, {
+        toValue: 1,
+        friction: 6,
+        tension: 120,
+        useNativeDriver: Platform.OS !== 'web',
+      }),
+      Animated.sequence([
+        Animated.delay(400),
+        Animated.timing(focusOpacity, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: Platform.OS !== 'web',
+        }),
+      ]),
+    ]).start(() => {
+      setFocusPoint(null);
+    });
+  };
+
   const runInspection = async (targetPanels: string[]) => {
     if (targetPanels.length === 0) return;
     setScanning(true);
@@ -185,9 +220,7 @@ export default function ScannerScreen({ navigation }: any) {
     if (cameraRef.current && permission?.granted) {
       try {
         const photo = await cameraRef.current.takePictureAsync({
-          quality: 0.90,
-          skipProcessing: true,
-          shutterSound: false,
+          quality: 0.85,
         });
         if (photo?.uri) {
           capturedUri = photo.uri;
@@ -211,8 +244,8 @@ export default function ScannerScreen({ navigation }: any) {
         return;
       }
       try {
-        const result = await ImagePicker.launchCameraAsync({ quality: 0.90 });
-        if (!result.canceled && result.assets[0]?.uri) {
+        const result = await ImagePicker.launchCameraAsync({ quality: 0.85 });
+        if (!result.canceled && result.assets && result.assets[0]?.uri) {
           capturedUri = result.assets[0].uri;
         }
       } catch (e) {
@@ -223,6 +256,9 @@ export default function ScannerScreen({ navigation }: any) {
     if (capturedUri) {
       const updated = [...panels, capturedUri];
       setPanels(updated);
+      setStatus(
+        `${updated.length} photo(s) captured. Snap another side or tap "Verify" below.`
+      );
     }
   };
 
@@ -313,14 +349,30 @@ export default function ScannerScreen({ navigation }: any) {
           </View>
         ) : (
           /* ── 4:5 Fixed Aspect Ratio Camera Container (Bigger, No Glitch) ── */
-          <View style={styles.cameraAspectBox}>
+          <Pressable style={styles.cameraAspectBox} onPress={handleFocusTap}>
             <CameraView
               ref={cameraRef}
-              style={StyleSheet.absoluteFillObject}
+              style={StyleSheet.absoluteFill}
               facing="back"
               enableTorch={flashOn}
               animateShutter={false}
             />
+
+            {/* Tap-to-Focus Animated Indicator */}
+            {focusPoint && (
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.focusIndicator,
+                  {
+                    left: focusPoint.x - 28,
+                    top: focusPoint.y - 28,
+                    opacity: focusOpacity,
+                    transform: [{ scale: focusScale }],
+                  },
+                ]}
+              />
+            )}
 
             {/* Bigger Precision Centered Targeting Frame */}
             <Animated.View style={[styles.scanFrame, { transform: [{ scale: pulseAnim }] }]}>
@@ -342,7 +394,7 @@ export default function ScannerScreen({ navigation }: any) {
                 </View>
               )}
             </Animated.View>
-          </View>
+          </Pressable>
         )}
 
         {/* ── Grayed-out Hint with Info Icon (Visible only in initial empty state) ── */}
@@ -350,7 +402,7 @@ export default function ScannerScreen({ navigation }: any) {
           <View style={styles.frameHintRow}>
             <Feather name="info" size={13} color="#94A3B8" style={styles.frameHintIcon} />
             <Text style={styles.frameHintText}>
-              Take 3 or more photos of the package to get a clear output
+              Tap the frame to focus, then snap 3+ photos for best results
             </Text>
           </View>
         )}
@@ -633,6 +685,16 @@ const styles = StyleSheet.create({
   framePlaceholder: {
     alignItems: 'center',
     paddingHorizontal: Spacing.sm,
+  },
+  focusIndicator: {
+    position: 'absolute',
+    width: 56,
+    height: 56,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+    backgroundColor: 'transparent',
+    zIndex: 50,
   },
 
   // ── Bottom Container (Fixed at screen bottom so it never shifts the camera) ──

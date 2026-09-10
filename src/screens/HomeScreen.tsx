@@ -9,7 +9,6 @@ import {
   StatusBar,
   Platform,
   Image,
-  TextInput,
 } from 'react-native';
 import Svg, {
   Defs,
@@ -27,7 +26,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Spacing, Radii, Shadows } from '../theme/colors';
 import { fetchScans, fetchComplaints } from '../utils/supabase';
 import { ScanResult, Complaint } from '../types';
-import StatusBadge from '../components/StatusBadge';
 
 const PRODUCT_IMAGES = [
   require('../../assets/1.png'),
@@ -62,6 +60,207 @@ function DynamicStatusBar({ scrollY }: { scrollY: Animated.Value }) {
   );
 }
 
+// ── Modern Record Card (Inspired by Image 2) ──
+function InspectionRecordCard({
+  title,
+  subtitle,
+  category,
+  date,
+  status,
+  statusLabel,
+  score,
+  rulesPassed,
+  totalRules,
+  imageUri,
+  severity,
+  onPress,
+}: {
+  title: string;
+  subtitle?: string;
+  category: string;
+  date: string;
+  status: 'COMPLIANT' | 'NON_COMPLIANT' | 'NEEDS_REVIEW' | 'SUBMITTED' | 'UNDER_REVIEW' | 'RESOLVED';
+  statusLabel?: string;
+  score?: number;
+  rulesPassed?: number;
+  totalRules?: number;
+  imageUri?: string;
+  severity?: string;
+  onPress: () => void;
+}) {
+  const isNonCompliant = status === 'NON_COMPLIANT';
+  const isCompliant = status === 'COMPLIANT' || status === 'RESOLVED';
+  const isReview = status === 'NEEDS_REVIEW';
+
+  let dotColor = '#12B76A';
+  let badgeBg = '#ECFDF3';
+  let textColor = '#027A48';
+  let label = statusLabel || 'Compliant';
+
+  if (isNonCompliant) {
+    dotColor = '#F04438';
+    badgeBg = '#FEF3F2';
+    textColor = '#B42318';
+    label = statusLabel || 'Action Required';
+  } else if (isReview) {
+    dotColor = '#F79009';
+    badgeBg = '#FFFAEB';
+    textColor = '#B54708';
+    label = statusLabel || 'Needs Review';
+  } else if (status === 'SUBMITTED' || status === 'UNDER_REVIEW') {
+    dotColor = '#2E90FA';
+    badgeBg = '#EFF8FF';
+    textColor = '#175CD3';
+    label = statusLabel || 'Notice Filed';
+  }
+
+  const priorityText =
+    severity || (isNonCompliant ? 'High' : isReview ? 'Medium' : 'Low');
+
+  const passed = rulesPassed ?? (isCompliant ? 12 : isNonCompliant ? 7 : 9);
+  const total = totalRules ?? 12;
+
+  const [imgError, setImgError] = useState(false);
+
+  return (
+    <TouchableOpacity
+      style={styles.modernCard}
+      onPress={onPress}
+      activeOpacity={0.88}
+    >
+      {/* Top row: Folder icon & Status dot pill */}
+      <View style={styles.modernCardTopRow}>
+        <View style={styles.modernCardFolderBox}>
+          <Feather name="folder" size={15} color="#475467" />
+        </View>
+        <View style={[styles.modernStatusPill, { backgroundColor: badgeBg }]}>
+          <View style={[styles.modernStatusDot, { backgroundColor: dotColor }]} />
+          <Text style={[styles.modernStatusText, { color: textColor }]}>{label}</Text>
+        </View>
+      </View>
+
+      {/* Title */}
+      <Text style={styles.modernCardTitle} numberOfLines={1}>
+        {title}
+      </Text>
+
+      {/* Subtitle description */}
+      {subtitle ? (
+        <Text style={styles.modernCardSub} numberOfLines={1}>
+          {subtitle}
+        </Text>
+      ) : null}
+
+      {/* Sub-row 1: Category / Item */}
+      <View style={styles.modernMetaRow}>
+        <Feather name="tag" size={12} color="#667085" style={{ marginRight: 5 }} />
+        <Text style={styles.modernMetaText} numberOfLines={1}>
+          {category} • Packaged Commodity
+        </Text>
+      </View>
+
+      {/* Sub-row 2: Date & Priority */}
+      <View style={styles.modernMetaRowBetween}>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Feather name="flag" size={12} color="#667085" style={{ marginRight: 5 }} />
+          <Text style={styles.modernMetaText}>{date}</Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Feather name="bar-chart-2" size={12} color="#344054" style={{ marginRight: 4 }} />
+          <Text style={styles.modernPriorityText}>{priorityText}</Text>
+        </View>
+      </View>
+
+      {/* Divider */}
+      <View style={styles.modernDivider} />
+
+      {/* Bottom Progress Row: Score, Rules & Product Thumbnail */}
+      <View style={styles.modernProgressRow}>
+        <View style={styles.modernProgressLeft}>
+          {score !== undefined ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 12 }}>
+              <View
+                style={[
+                  styles.scoreMiniDot,
+                  { backgroundColor: isCompliant ? '#12B76A' : isNonCompliant ? '#F04438' : '#F79009' },
+                ]}
+              />
+              <Text style={styles.modernScoreText}>{score}%</Text>
+            </View>
+          ) : null}
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Feather name="check-square" size={12} color="#667085" style={{ marginRight: 4 }} />
+            <Text style={styles.modernRulesText}>
+              {passed}/{total} Rules
+            </Text>
+          </View>
+        </View>
+
+        {/* Thumbnail on Bottom Right */}
+        <View style={styles.modernCardThumbWrap}>
+          {imageUri && !imgError ? (
+            <Image
+              source={{ uri: imageUri }}
+              style={styles.modernCardThumbImg}
+              resizeMode="cover"
+              onError={() => setImgError(true)}
+            />
+          ) : (
+            <View style={styles.modernCardThumbPlaceholder}>
+              <Feather name="package" size={16} color="#98A2B3" />
+            </View>
+          )}
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+// ── Modern Pastel Guide Card (Inspired by Image 1) ──
+function PastelGuideCard({
+  title,
+  subtitle,
+  bgColor,
+  tags,
+  onPress,
+}: {
+  title: string;
+  subtitle: string;
+  bgColor: string;
+  tags: string[];
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={styles.pastelCard}
+      onPress={onPress}
+      activeOpacity={0.88}
+    >
+      <View style={[styles.pastelCardTop, { backgroundColor: bgColor }]}>
+        <Text style={styles.pastelCardTitle} numberOfLines={1}>
+          {title}
+        </Text>
+        <Text style={styles.pastelCardSub} numberOfLines={2}>
+          {subtitle}
+        </Text>
+        <View style={styles.pastelPillsRow}>
+          {tags.map((tag, idx) => (
+            <View key={idx} style={styles.pastelPill}>
+              <Text style={styles.pastelPillText}>{tag}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+      <View style={styles.pastelCardBottom}>
+        <Text style={styles.pastelExploreText}>Explore</Text>
+        <View style={styles.pastelArrowBtn}>
+          <Feather name="arrow-right" size={13} color="#101828" />
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
 export default function HomeScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const scanPressAnim = useRef(new Animated.Value(1)).current;
@@ -71,26 +270,10 @@ export default function HomeScreen({ navigation }: any) {
   const scrollY = useRef(new Animated.Value(0)).current;
   const [scans, setScans] = useState<ScanResult[]>([]);
   const [complaints, setComplaints] = useState<Complaint[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'COMPLIANT' | 'NON_COMPLIANT' | 'NEEDS_REVIEW'>('ALL');
 
   const compliantCount = scans.filter((s) => s.overallStatus === 'COMPLIANT').length;
   const violationCount = scans.filter((s) => s.overallStatus === 'NON_COMPLIANT').length;
   const reviewCount = scans.filter((s) => s.overallStatus === 'NEEDS_REVIEW').length;
-  const complianceRate = scans.length > 0 ? Math.round((compliantCount / scans.length) * 100) : 100;
-
-  const filteredScans = scans.filter((s) => {
-    const matchesSearch =
-      searchQuery.trim().length === 0 ||
-      s.productName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.id.toLowerCase().includes(searchQuery.toLowerCase());
-
-    const matchesStatus =
-      statusFilter === 'ALL' || s.overallStatus === statusFilter;
-
-    return matchesSearch && matchesStatus;
-  });
 
   const heroTranslateY = scrollY.interpolate({
     inputRange: [-500, 0, 4000],
@@ -207,6 +390,8 @@ export default function HomeScreen({ navigation }: any) {
   const pendingScans = scans.filter(
     (s) => s.overallStatus === 'NON_COMPLIANT' || s.overallStatus === 'NEEDS_REVIEW'
   );
+
+  const recentScans = scans.slice(0, 4);
 
   const statusBarHeight =
     Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : insets.top;
@@ -474,415 +659,283 @@ export default function HomeScreen({ navigation }: any) {
             <View style={styles.handleBar} />
           </View>
 
-          {/* Quick stats */}
+          {/* ── Quick Stats Row ── */}
           <View style={styles.statsRow}>
-            <View style={styles.statItem}>
+            <TouchableOpacity style={styles.statItem} activeOpacity={0.7}>
               <Text style={styles.statNum}>{scans.length}</Text>
-              <Text style={styles.statLabel}>Total Scans</Text>
-            </View>
+              <Text style={styles.statLabel}>Scans</Text>
+            </TouchableOpacity>
             <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statNum}>{complaints.length}</Text>
-              <Text style={styles.statLabel}>Complaints</Text>
-            </View>
+            <TouchableOpacity style={styles.statItem} activeOpacity={0.7}>
+              <Text style={[styles.statNum, { color: Colors.pass }]}>{compliantCount}</Text>
+              <Text style={styles.statLabel}>Passed</Text>
+            </TouchableOpacity>
             <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={[styles.statNum, pendingScans.length > 0 && { color: Colors.fail }]}>
-                {pendingScans.length}
-              </Text>
-              <Text style={styles.statLabel}>Pending</Text>
-            </View>
+            <TouchableOpacity style={styles.statItem} activeOpacity={0.7}>
+              <Text style={[styles.statNum, violationCount > 0 && { color: Colors.fail }]}>{violationCount}</Text>
+              <Text style={styles.statLabel}>Flagged</Text>
+            </TouchableOpacity>
+            <View style={styles.statDivider} />
+            <TouchableOpacity
+              style={styles.statItem}
+              onPress={() => navigation.navigate('Track')}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.statNum, { color: Colors.primary }]}>{complaints.length}</Text>
+              <Text style={styles.statLabel}>Notices</Text>
+            </TouchableOpacity>
           </View>
 
-          {/* ── Registered Complaints ────────────────────── */}
-          <View style={styles.sectionContainer}>
-            <View style={styles.sectionHeader}>
-              <View style={styles.sectionTitleRow}>
-                <Text style={styles.sectionTitle}>Registered Complaints</Text>
-                <View style={styles.countBadge}>
-                  <Text style={styles.countBadgeText}>{complaints.length}</Text>
-                </View>
-              </View>
-              {complaints.length > 0 && (
-                <TouchableOpacity
-                  onPress={() => navigation.navigate('Track')}
-                  style={styles.linkBtn}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.linkBtnText}>Track all →</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {complaints.length === 0 ? (
-              <View style={styles.emptyComplaintsBox}>
-                <View style={styles.emptyComplaintsIconCircle}>
-                  <Feather name="shield" size={22} color="#94A3B8" />
-                </View>
-                <Text style={styles.emptyComplaintsText}>
-                  Your registered complaints will be available here. Currently 0.
-                </Text>
-                <Text style={styles.emptyComplaintsSub}>
-                  When you scan product packaging and file notices for non-compliant declarations, their live status will be tracked here.
-                </Text>
-              </View>
-            ) : (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.horizontalScroll}
-              >
-                {complaints.map((item, index) => {
-                  const isHigh = item.severity === 'HIGH' || item.severity === 'CRITICAL';
-                  const cardBg = index % 2 === 0 ? Colors.porcelain : '#F3E8FF';
-                  const accentColor = index % 2 === 0 ? '#0D9488' : '#7C3AED';
-
-                  return (
-                    <TouchableOpacity
-                      key={item.id}
-                      style={[styles.horizontalCard, { backgroundColor: cardBg }]}
-                      onPress={() => navigation.navigate('Track', { complaint: item })}
-                      activeOpacity={0.88}
-                    >
-                      <View style={styles.hCardTop}>
-                        <View style={[styles.hCaseIdPill, { backgroundColor: Colors.white }]}>
-                          <Text style={[styles.hCaseIdText, { color: accentColor }]}>{item.id}</Text>
-                        </View>
-                        <StatusBadge
-                          status={item.status === 'RESOLVED' ? 'PASS' : isHigh ? 'FAIL' : 'REVIEW'}
-                          size="sm"
-                        />
-                      </View>
-                      <Text style={styles.hCardTitle} numberOfLines={1}>{item.productName}</Text>
-                      <Text style={styles.hCardCategory}>{item.category} Commodity</Text>
-                      <View style={styles.violationsTagContainer}>
-                        <Feather name="alert-triangle" size={11} color={accentColor} style={{ marginRight: 4 }} />
-                        <Text style={[styles.violationsSummary, { color: accentColor }]} numberOfLines={1}>
-                          {item.violations[0] || 'Declarations missing'}
-                        </Text>
-                      </View>
-                      <View style={styles.hCardFooter}>
-                        <View style={styles.officerRow}>
-                          <Feather name="shield" size={12} color={Colors.textSecondary} style={{ marginRight: 4 }} />
-                          <Text style={styles.officerText}>Jurisdiction Office</Text>
-                        </View>
-                        <View style={[styles.hArrowCircle, { backgroundColor: Colors.white }]}>
-                          <Feather name="chevron-right" size={14} color={accentColor} />
-                        </View>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            )}
-          </View>
-
-          {/* ── Pending Action (Drafts) - Only shown when pending items exist ── */}
+          {/* ── Pending Action (Needs Action - Image 2 Record Card Style) ── */}
           {pendingScans.length > 0 && (
             <View style={styles.sectionContainer}>
               <View style={styles.sectionHeader}>
                 <View style={styles.sectionTitleRow}>
-                  <Text style={styles.sectionTitle}>Pending Action</Text>
-                  <View style={[styles.countBadge, { backgroundColor: Colors.failBg }]}>
+                  <View style={[styles.sectionIconCircle, { backgroundColor: '#FEE2E2' }]}>
+                    <Feather name="alert-circle" size={14} color={Colors.fail} />
+                  </View>
+                  <Text style={styles.sectionTitle}>Needs Action</Text>
+                  <View style={[styles.countBadge, { backgroundColor: '#FEE2E2' }]}>
                     <Text style={[styles.countBadgeText, { color: Colors.fail }]}>
                       {pendingScans.length}
                     </Text>
                   </View>
                 </View>
-                <TouchableOpacity onPress={() => navigation.navigate('Scanner')}>
-                  <Text style={styles.scanMoreLink}>+ New Scan</Text>
-                </TouchableOpacity>
               </View>
 
-              {pendingScans.map((scan) => {
-                const isNonCompliant = scan.overallStatus === 'NON_COMPLIANT';
-                const failFields = scan.fields.filter((f) => f.status === 'FAIL');
-                return (
-                  <TouchableOpacity
-                    key={scan.id}
-                    style={styles.pendingCard}
-                    onPress={() => navigation.navigate('Report', { scan })}
-                    activeOpacity={0.85}
-                  >
-                    <View style={styles.pendingCardTop}>
-                      <View style={styles.pendingLeftInfo}>
-                        <View style={styles.pendingIdRow}>
-                          <Text style={styles.pendingId}>{scan.id}</Text>
-                          <Text style={styles.pendingDot}>•</Text>
-                          <Text style={styles.pendingCategory}>{scan.category}</Text>
-                        </View>
-                        <Text style={styles.pendingProductName}>{scan.productName}</Text>
-                      </View>
-                      <View
-                        style={[
-                          styles.scoreCircle,
-                          { backgroundColor: isNonCompliant ? Colors.failBg : Colors.reviewBg },
-                        ]}
-                      >
-                        <Text style={[styles.scoreText, { color: isNonCompliant ? Colors.fail : Colors.review }]}>
-                          {scan.score}%
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.pendingDivider} />
-
-                    <View style={styles.pendingCardBottom}>
-                      <View style={styles.missingIssuesBox}>
-                        <Feather
-                          name="alert-circle"
-                          size={12}
-                          color={isNonCompliant ? Colors.fail : Colors.review}
-                          style={{ marginRight: 5 }}
-                        />
-                        <Text style={styles.missingIssuesText} numberOfLines={1}>
-                          {failFields.length > 0
-                            ? `${failFields.length} rule violation(s) detected`
-                            : 'Low confidence OCR requires review'}
-                        </Text>
-                      </View>
-                      <TouchableOpacity
-                        style={[
-                          styles.fileNoticeBtn,
-                          { backgroundColor: isNonCompliant ? Colors.almostBlack : Colors.white },
-                        ]}
-                        onPress={() => navigation.navigate('Complaint', { scan })}
-                        activeOpacity={0.8}
-                      >
-                        <Text style={[styles.fileNoticeBtnText, { color: isNonCompliant ? Colors.white : Colors.textPrimary }]}>
-                          {isNonCompliant ? 'File Notice' : 'Verify'}
-                        </Text>
-                        <Feather
-                          name="arrow-up-right"
-                          size={12}
-                          color={isNonCompliant ? Colors.white : Colors.textPrimary}
-                          style={{ marginLeft: 3 }}
-                        />
-                      </TouchableOpacity>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          )}
-
-          {/* ── Enforcement Intelligence Analytics Dashboard ── */}
-          <View style={styles.dashboardSection}>
-            <View style={styles.dashboardCard}>
-              <View style={styles.dashboardHeaderRow}>
-                <View style={styles.dashboardHeaderLeft}>
-                  <View style={styles.dashboardIconCircle}>
-                    <Feather name="bar-chart-2" size={15} color="#0D9488" />
-                  </View>
-                  <View>
-                    <Text style={styles.dashboardBadgeTag}>ENFORCEMENT INTELLIGENCE</Text>
-                    <Text style={styles.dashboardTitle}>Compliance Monitoring</Text>
-                  </View>
-                </View>
-                <View style={styles.complianceIndexPill}>
-                  <Text style={styles.complianceIndexValue}>{complianceRate}%</Text>
-                  <Text style={styles.complianceIndexLabel}>PASSED</Text>
-                </View>
-              </View>
-
-              <View style={styles.dashboardMetricsGrid}>
-                <View style={styles.dashboardMetricItem}>
-                  <Text style={styles.dashMetricNum}>{scans.length}</Text>
-                  <Text style={styles.dashMetricLabel}>Inspections</Text>
-                </View>
-                <View style={styles.dashboardMetricDivider} />
-                <View style={styles.dashboardMetricItem}>
-                  <Text style={[styles.dashMetricNum, { color: Colors.pass }]}>{compliantCount}</Text>
-                  <Text style={styles.dashMetricLabel}>Compliant</Text>
-                </View>
-                <View style={styles.dashboardMetricDivider} />
-                <View style={styles.dashboardMetricItem}>
-                  <Text style={[styles.dashMetricNum, { color: violationCount > 0 ? Colors.fail : Colors.textPrimary }]}>
-                    {violationCount}
-                  </Text>
-                  <Text style={styles.dashMetricLabel}>Violations</Text>
-                </View>
-                <View style={styles.dashboardMetricDivider} />
-                <View style={styles.dashboardMetricItem}>
-                  <Text style={[styles.dashMetricNum, { color: Colors.primary }]}>{complaints.length}</Text>
-                  <Text style={styles.dashMetricLabel}>Notices</Text>
-                </View>
-              </View>
-
-              {/* Statutory Health Progress Bar */}
-              <View style={styles.healthBarTrack}>
-                <View
-                  style={[
-                    styles.healthBarFill,
-                    {
-                      width: `${Math.max(complianceRate, 4)}%`,
-                      backgroundColor:
-                        complianceRate >= 80 ? Colors.pass : complianceRate >= 50 ? Colors.primary : Colors.fail,
-                    },
-                  ]}
-                />
-              </View>
-            </View>
-          </View>
-
-          {/* ── Search & Retrieval Inspection History Repository ── */}
-          <View style={styles.sectionContainer}>
-            <View style={styles.sectionHeader}>
-              <View style={styles.sectionTitleRow}>
-                <Text style={styles.sectionTitle}>Inspection Repository</Text>
-                <View style={styles.countBadge}>
-                  <Text style={styles.countBadgeText}>{filteredScans.length}</Text>
-                </View>
-              </View>
-              {scans.length > 0 && (
-                <TouchableOpacity onPress={() => navigation.navigate('Scanner')}>
-                  <Text style={styles.scanMoreLink}>+ New Scan</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {/* Search Input Bar */}
-            {scans.length > 0 && (
-              <View style={styles.searchBarWrapper}>
-                <Feather name="search" size={15} color="#94A3B8" style={{ marginRight: 8 }} />
-                <TextInput
-                  placeholder="Search previously scanned commodities..."
-                  placeholderTextColor="#94A3B8"
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                  style={styles.searchInputField}
-                  autoCapitalize="none"
-                  returnKeyType="search"
-                />
-                {searchQuery.length > 0 && (
-                  <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Feather name="x-circle" size={15} color="#94A3B8" />
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
-
-            {/* Status Filter Chips */}
-            {scans.length > 0 && (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.filterChipsRow}
-              >
-                {(
-                  [
-                    { id: 'ALL', label: `All (${scans.length})` },
-                    { id: 'COMPLIANT', label: `Compliant (${compliantCount})` },
-                    { id: 'NON_COMPLIANT', label: `Violations (${violationCount})` },
-                    { id: 'NEEDS_REVIEW', label: `Review (${reviewCount})` },
-                  ] as const
-                ).map((chip) => {
-                  const isActive = statusFilter === chip.id;
-                  return (
-                    <TouchableOpacity
-                      key={chip.id}
-                      style={[styles.filterChip, isActive && styles.filterChipActive]}
-                      onPress={() => setStatusFilter(chip.id)}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={[styles.filterChipText, isActive && styles.filterChipTextActive]}>
-                        {chip.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            )}
-
-            {/* Repository List or Empty States */}
-            {scans.length === 0 ? (
-              <View style={styles.emptyComplaintsBox}>
-                <View style={styles.emptyComplaintsIconCircle}>
-                  <Feather name="package" size={22} color="#94A3B8" />
-                </View>
-                <Text style={styles.emptyComplaintsText}>No scanned commodities in repository.</Text>
-                <Text style={styles.emptyComplaintsSub}>
-                  When you scan product packaging labels, their full Legal Metrology compliance records will be archived here.
-                </Text>
-              </View>
-            ) : filteredScans.length === 0 ? (
-              <View style={[styles.emptyComplaintsBox, { paddingVertical: 20 }]}>
-                <Feather name="search" size={20} color="#94A3B8" style={{ marginBottom: 6 }} />
-                <Text style={[styles.emptyComplaintsText, { fontSize: 13 }]}>
-                  No commodities found matching "{searchQuery}".
-                </Text>
-              </View>
-            ) : (
-              filteredScans.map((item) => {
-                const isPass = item.overallStatus === 'COMPLIANT';
-                const isFail = item.overallStatus === 'NON_COMPLIANT';
-                const statusBadgeBg = isPass ? '#DCFCE7' : isFail ? '#FEE2E2' : '#FEF3C7';
-                const statusBadgeText = isPass ? '#15803D' : isFail ? '#B91C1C' : '#B45309';
-                const dateText = new Date(item.timestamp).toLocaleDateString('en-IN', {
+              {pendingScans.slice(0, 3).map((scan) => {
+                const dateStr = new Date(scan.timestamp).toLocaleDateString('en-IN', {
                   day: 'numeric',
                   month: 'short',
                   year: 'numeric',
                 });
+                const violationSummary =
+                  scan.observations && scan.observations.length > 0
+                    ? scan.observations[0]
+                    : 'Mandatory statutory declaration missing under Rule 6';
+                const passCount = scan.fields.filter((f) => f.status === 'PASS').length;
 
                 return (
-                  <TouchableOpacity
+                  <InspectionRecordCard
+                    key={scan.id}
+                    title={scan.productName}
+                    subtitle={violationSummary}
+                    category={scan.category}
+                    date={dateStr}
+                    status={scan.overallStatus}
+                    statusLabel={scan.overallStatus === 'NON_COMPLIANT' ? 'Non-Compliant' : 'Needs Review'}
+                    score={scan.score}
+                    rulesPassed={passCount}
+                    totalRules={scan.fields.length || 12}
+                    imageUri={scan.imageUri || (scan.images && scan.images[0])}
+                    severity={scan.overallStatus === 'NON_COMPLIANT' ? 'High' : 'Medium'}
+                    onPress={() => navigation.navigate('Report', { scan })}
+                  />
+                );
+              })}
+
+              {pendingScans.length > 3 && (
+                <TouchableOpacity
+                  style={styles.seeAllBtn}
+                  onPress={() => navigation.navigate('Scanner')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.seeAllText}>
+                    View all {pendingScans.length} pending items
+                  </Text>
+                  <Feather name="chevron-right" size={14} color={Colors.primary} />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {/* ── Registered Complaints (Image 2 Record Card Style) ── */}
+          <View style={styles.sectionContainer}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleRow}>
+                <View style={[styles.sectionIconCircle, { backgroundColor: '#EFF8FF' }]}>
+                  <Feather name="shield" size={14} color="#175CD3" />
+                </View>
+                <Text style={styles.sectionTitle}>Filed Complaints</Text>
+                <View style={[styles.countBadge, { backgroundColor: '#EFF8FF' }]}>
+                  <Text style={[styles.countBadgeText, { color: '#175CD3' }]}>{complaints.length}</Text>
+                </View>
+              </View>
+              {complaints.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => navigation.navigate('Track')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.linkBtnText}>Track →</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {complaints.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <View style={styles.emptyIconCircle}>
+                  <Feather name="shield" size={20} color="#94A3B8" />
+                </View>
+                <Text style={styles.emptyTitle}>No complaints filed yet</Text>
+                <Text style={styles.emptySub}>
+                  Scan a package and file a statutory notice if violations are found.
+                </Text>
+              </View>
+            ) : (
+              complaints.slice(0, 3).map((item) => {
+                const dateStr = new Date(item.filedAt).toLocaleDateString('en-IN', {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                });
+                const summary =
+                  item.violations && item.violations.length > 0
+                    ? `Contraventions: ${item.violations.join(', ')}`
+                    : 'Statutory complaint submitted to enforcement jurisdiction';
+
+                return (
+                  <InspectionRecordCard
                     key={item.id}
-                    style={styles.repoCard}
-                    onPress={() => navigation.navigate('Report', { scan: item })}
-                    activeOpacity={0.85}
-                  >
-                    <View style={styles.repoThumbnailBox}>
-                      {item.imageUri ? (
-                        <Image source={{ uri: item.imageUri }} style={styles.repoThumbnailImg} resizeMode="cover" />
-                      ) : (
-                        <Feather name="box" size={20} color="#94A3B8" />
-                      )}
-                    </View>
-                    <View style={styles.repoContentCol}>
-                      <View style={styles.repoTopRow}>
-                        <Text style={styles.repoIdText}>{item.id}</Text>
-                        <Text style={styles.repoDateText}>{dateText}</Text>
-                      </View>
-                      <Text style={styles.repoTitleText} numberOfLines={1}>
-                        {item.productName}
-                      </Text>
-                      <Text style={styles.repoCategoryText}>{item.category} Commodity</Text>
-                    </View>
-                    <View style={styles.repoRightCol}>
-                      <View style={[styles.repoScoreBadge, { backgroundColor: statusBadgeBg }]}>
-                        <Text style={[styles.repoScoreText, { color: statusBadgeText }]}>{item.score}%</Text>
-                      </View>
-                      <Feather name="chevron-right" size={16} color="#94A3B8" style={{ marginTop: 6 }} />
-                    </View>
-                  </TouchableOpacity>
+                    title={item.productName}
+                    subtitle={summary}
+                    category={item.category}
+                    date={dateStr}
+                    status={item.status as any}
+                    statusLabel={item.status.replace('_', ' ')}
+                    severity={item.severity}
+                    imageUri={
+                      item.imageUri ||
+                      scans.find((s) => s.id === item.scanId)?.imageUri ||
+                      scans.find((s) => s.id === item.scanId)?.images?.[0]
+                    }
+                    onPress={() => navigation.navigate('Track', { complaint: item })}
+                  />
                 );
               })
             )}
           </View>
 
-          {/* ── Statutory Legal Metrology Advisory Notice Banner ── */}
-          <View style={styles.statutoryNoticeCard}>
-            <View style={styles.statutoryBadgeRow}>
-              <View style={styles.statutoryIconCircle}>
-                <Feather name="file-text" size={16} color={Colors.primary} />
+          {/* ── Recent Scans (Latest 4 - Image 2 Record Card Style) ── */}
+          <View style={styles.sectionContainer}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleRow}>
+                <View style={[styles.sectionIconCircle, { backgroundColor: '#ECFDF3' }]}>
+                  <Feather name="clock" size={14} color="#0D9488" />
+                </View>
+                <Text style={styles.sectionTitle}>Recent Scans</Text>
               </View>
-              <View style={styles.statutoryBadgeTextCol}>
-                <Text style={styles.statutoryBadgeTag}>OFFICIAL STATUTORY NOTICE</Text>
-                <Text style={styles.statutoryRuleTitle}>Legal Metrology (Packaged Commodities) Rules, 2011</Text>
-              </View>
+              {scans.length > 4 && (
+                <TouchableOpacity
+                  onPress={() => navigation.navigate('Scanner')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.linkBtnText}>See All →</Text>
+                </TouchableOpacity>
+              )}
             </View>
 
-            <Text style={styles.statutoryNoticeParagraph}>
-              Under the Legal Metrology Act, 2009, it is mandatory for every pre-packaged commodity in India to display accurate MRP (inclusive of all taxes), Net Quantity, Date of Manufacture, and complete Consumer Care details. Selling above MRP or omitting declarations is a cognizable statutory offence.
+            {scans.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <View style={styles.emptyIconCircle}>
+                  <Feather name="package" size={20} color="#94A3B8" />
+                </View>
+                <Text style={styles.emptyTitle}>No scans yet</Text>
+                <Text style={styles.emptySub}>
+                  Tap the Scan button above to inspect and verify packaging declarations.
+                </Text>
+              </View>
+            ) : (
+              recentScans.map((item) => {
+                const dateStr = new Date(item.timestamp).toLocaleDateString('en-IN', {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                });
+                const isCompliant = item.overallStatus === 'COMPLIANT';
+                const summary = isCompliant
+                  ? 'All mandatory Rule 6 declarations verified'
+                  : item.observations?.[0] || 'Statutory review indicated for packaging';
+                const passCount = item.fields.filter((f) => f.status === 'PASS').length;
+
+                return (
+                  <InspectionRecordCard
+                    key={item.id}
+                    title={item.productName}
+                    subtitle={summary}
+                    category={item.category}
+                    date={dateStr}
+                    status={item.overallStatus}
+                    statusLabel={isCompliant ? 'Compliant' : 'Needs Review'}
+                    score={item.score}
+                    rulesPassed={passCount}
+                    totalRules={item.fields.length || 12}
+                    imageUri={item.imageUri || (item.images && item.images[0])}
+                    onPress={() => navigation.navigate('Report', { scan: item })}
+                  />
+                );
+              })
+            )}
+          </View>
+
+          {/* ── Statutory Standards & Guidelines (2x2 Grid - Image 1 Pastel Style) ── */}
+          <View style={styles.sectionContainer}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleRow}>
+                <View style={[styles.sectionIconCircle, { backgroundColor: '#F3E8FF' }]}>
+                  <Feather name="book-open" size={14} color="#7C3AED" />
+                </View>
+                <Text style={styles.sectionTitle}>Standards & Guidelines</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => navigation.navigate('Rules')}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.linkBtnText}>All Rules →</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* 2x2 Grid Layout */}
+            <View style={styles.pastelGridRow}>
+              <PastelGuideCard
+                title="Declarations"
+                subtitle="Rule 6 mandatory packaging labels"
+                bgColor="#E8F4FD"
+                tags={['MRP', 'Mfg Date', 'Net Qty', 'Origin']}
+                onPress={() => navigation.navigate('Rules')}
+              />
+              <PastelGuideCard
+                title="Font Scale"
+                subtitle="Rule 9 minimum numeral heights"
+                bgColor="#FFEADA"
+                tags={['< 50cm²', '100-500cm²', 'Rule 13']}
+                onPress={() => navigation.navigate('Rules')}
+              />
+            </View>
+
+            <View style={styles.pastelGridRow}>
+              <PastelGuideCard
+                title="Enforcement"
+                subtitle="Statutory notice & offences"
+                bgColor="#EFEAFF"
+                tags={['Section 18', 'Section 36', 'Notice']}
+                onPress={() => navigation.navigate('Rules')}
+              />
+              <PastelGuideCard
+                title="Helpline 1915"
+                subtitle="National Grievance & INGRAM"
+                bgColor="#E0F8EE"
+                tags={['Toll Free', 'e-Daakhil', 'Support']}
+                onPress={() => navigation.navigate('Rules')}
+              />
+            </View>
+          </View>
+
+          {/* Helpline pill */}
+          <View style={styles.helplinePill}>
+            <Feather name="phone-call" size={12} color="#64748B" style={{ marginRight: 6 }} />
+            <Text style={styles.helplineText}>
+              Consumer Helpline: 1915 • National Consumer Grievance Portal
             </Text>
-
-            <View style={styles.statutoryHelplineBox}>
-              <View style={styles.helplinePhoneRow}>
-                <Feather name="phone-call" size={13} color="#0F172A" style={{ marginRight: 6 }} />
-                <Text style={styles.helplinePhoneText}>National Consumer Helpline: 1915</Text>
-              </View>
-              <Text style={styles.helplinePortalText}>consumerhelpline.gov.in</Text>
-            </View>
           </View>
 
         </View>
@@ -1018,7 +1071,7 @@ const styles = StyleSheet.create({
     borderColor: '#FFFFFF',
   },
 
-  // Hero Sentence Container (~50-60% width, Aura Gold inspiration)
+  // Hero Sentence Container
   heroSentenceContainer: {
     width: '70%',
     maxWidth: 270,
@@ -1035,11 +1088,11 @@ const styles = StyleSheet.create({
     lineHeight: 33,
   },
   highlightWord: {
-    color: '#fff314ff', // Electric Sky Cyan - high contrast pop against Orange
+    color: '#fff314ff',
     fontWeight: '900',
   },
 
-  // Pure White Scan Button (Zero drop shadows, clean white pill with scan icon)
+  // Pure White Scan Button
   whiteCompactScanBtn: {
     backgroundColor: '#FFFFFF',
     flexDirection: 'row',
@@ -1057,7 +1110,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
 
-  // ── Carousel Scanning (Scaled ~30% smaller) ─────────────────────────
+  // ── Carousel Scanning ─────────────────────────
   carouselContainer: {
     height: 145,
     width: '100%',
@@ -1124,7 +1177,7 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
   },
 
-  // ── Grab Handle / Navigation Bar Indicator ──────────
+  // ── Grab Handle ──────────
   handleBarContainer: {
     width: '100%',
     alignItems: 'center',
@@ -1149,8 +1202,8 @@ const styles = StyleSheet.create({
   // ── White sheet overlapping hero ──────────────────────
   sheet: {
     backgroundColor: Colors.canvas,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     marginTop: -26,
     paddingTop: 4,
     paddingHorizontal: Spacing.lg,
@@ -1160,64 +1213,74 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.03,
     shadowRadius: 6,
-    minHeight: 1000,
+    minHeight: 800,
   },
 
-  // Quick stats (Apple Liquid Glass - Zero Drop Shadow)
+  // ── Quick Stats Row ──
   statsRow: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(255, 255, 255, 0.88)',
-    borderRadius: 22,
-    paddingVertical: Spacing.md + 2,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    paddingVertical: 14,
     marginBottom: Spacing.xl,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.95)',
+    borderWidth: 1,
+    borderColor: '#EAECF0',
+    ...Shadows.soft,
   },
   statItem: {
     flex: 1,
     alignItems: 'center',
   },
   statNum: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '700',
     color: Colors.textPrimary,
     letterSpacing: -0.5,
   },
   statLabel: {
     fontSize: 10,
-    fontWeight: '500',
+    fontWeight: '600',
     color: Colors.textSecondary,
     marginTop: 2,
   },
   statDivider: {
     width: 1,
     height: '55%',
-    backgroundColor: Colors.border,
+    backgroundColor: '#E2E8F0',
     alignSelf: 'center',
   },
 
-  // Sections
+  // ── Sections ──
   sectionContainer: {
-    marginBottom: Spacing.lg,
+    marginBottom: 24,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Spacing.sm,
+    marginBottom: 12,
   },
   sectionTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
+  sectionIconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.failBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '700',
     color: Colors.textPrimary,
-    letterSpacing: -0.3,
+    letterSpacing: -0.2,
   },
   countBadge: {
-    backgroundColor: Colors.porcelainDark,
+    backgroundColor: '#F1F5F9',
     paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: Radii.full,
@@ -1228,511 +1291,290 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.textPrimary,
   },
-  linkBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
   linkBtnText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: Colors.primary,
-  },
-  scanMoreLink: {
     fontSize: 12,
     fontWeight: '600',
     color: Colors.primary,
   },
 
-  // Horizontal cards (Liquid Glass - Zero Drop Shadow)
-  horizontalScroll: {
-    paddingRight: Spacing.lg,
-    gap: Spacing.sm,
+  // ── Status Dot ──
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
   },
-  horizontalCard: {
-    width: 220,
-    borderRadius: 22,
-    padding: Spacing.md,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.95)',
-  },
-  hCardTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  hCaseIdPill: {
-    paddingHorizontal: 7,
+
+  // ── Score Pill ──
+  scorePill: {
+    paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: Radii.full,
   },
-  hCaseIdText: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-  },
-  hCardTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.textPrimary,
-    letterSpacing: -0.2,
-  },
-  hCardCategory: {
+  scorePillText: {
     fontSize: 11,
-    color: Colors.textSecondary,
-    marginTop: 2,
-    marginBottom: 8,
+    fontWeight: '800',
   },
-  violationsTagContainer: {
+
+  // ── Modern Record Cards (Image 2 Style) ──
+  modernCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#EAECF0',
+    ...Shadows.soft,
+  },
+  modernCardTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  modernCardFolderBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#EAECF0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modernStatusPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.65)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: Radii.sm,
+    paddingHorizontal: 9,
+    paddingVertical: 3.5,
+    borderRadius: 999,
+  },
+  modernStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 5,
+  },
+  modernStatusText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  modernCardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#101828',
+    marginTop: 10,
+    letterSpacing: -0.2,
+  },
+  modernCardSub: {
+    fontSize: 13,
+    color: '#475467',
+    marginTop: 2,
+    lineHeight: 17,
+  },
+  modernMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  modernMetaRowBetween: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 6,
+  },
+  modernMetaText: {
+    fontSize: 12,
+    color: '#475467',
+  },
+  modernPriorityText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#344054',
+  },
+  modernDivider: {
+    height: 1,
+    backgroundColor: '#F2F4F7',
+    marginVertical: 12,
+  },
+  modernProgressRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  modernProgressLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  scoreMiniDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 5,
+  },
+  modernScoreText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#101828',
+  },
+  modernRulesText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#475467',
+  },
+  modernCardThumbWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#EAECF0',
+    backgroundColor: '#F8FAFC',
+  },
+  modernCardThumbImg: {
+    width: '100%',
+    height: '100%',
+  },
+  modernCardThumbPlaceholder: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F1F5F9',
+  },
+  seeAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    marginTop: 2,
+  },
+  seeAllText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.primary,
+    marginRight: 4,
+  },
+
+  // ── Modern Pastel Guide Cards (Image 1 Style) ──
+  pastelGridRow: {
+    flexDirection: 'row',
+    gap: 10,
     marginBottom: 10,
   },
-  violationsSummary: {
-    fontSize: 10,
-    fontWeight: '600',
+  pastelCard: {
     flex: 1,
-  },
-  hCardFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  officerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  officerText: {
-    fontSize: 10,
-    fontWeight: '500',
-    color: Colors.textSecondary,
-  },
-  hArrowCircle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.9)',
+    borderColor: '#EAECF0',
+    overflow: 'hidden',
+    ...Shadows.soft,
   },
-
-  // Pending cards (Liquid Glass - Zero Drop Shadow)
-  pendingCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.88)',
-    borderRadius: 22,
-    padding: Spacing.md,
-    marginBottom: Spacing.sm,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.95)',
-  },
-  pendingCardTop: {
-    flexDirection: 'row',
+  pastelCardTop: {
+    padding: 14,
+    minHeight: 140,
     justifyContent: 'space-between',
-    alignItems: 'center',
   },
-  pendingLeftInfo: {
-    flex: 1,
-    paddingRight: Spacing.sm,
-  },
-  pendingIdRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 2,
-  },
-  pendingId: {
-    fontSize: 10,
+  pastelCardTitle: {
+    fontSize: 16,
     fontWeight: '700',
-    color: Colors.textMuted,
-    letterSpacing: 0.4,
-  },
-  pendingDot: {
-    fontSize: 10,
-    color: Colors.textMuted,
-    marginHorizontal: 4,
-  },
-  pendingCategory: {
-    fontSize: 10,
-    fontWeight: '500',
-    color: Colors.textSecondary,
-  },
-  pendingProductName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.textPrimary,
+    color: '#101828',
     letterSpacing: -0.2,
   },
-  scoreCircle: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: Radii.full,
-  },
-  scoreText: {
+  pastelCardSub: {
     fontSize: 11,
-    fontWeight: '700',
+    color: '#475467',
+    marginTop: 3,
+    lineHeight: 15,
   },
-  pendingDivider: {
-    height: 1,
-    backgroundColor: 'rgba(13, 13, 18, 0.04)',
-    marginVertical: 10,
+  pastelPillsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 8,
   },
-  pendingCardBottom: {
+  pastelPill: {
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255, 255, 255, 0.75)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.05)',
+  },
+  pastelPillText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  pastelCardBottom: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  missingIssuesBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    marginRight: 8,
-  },
-  missingIssuesText: {
-    fontSize: 11,
-    color: Colors.textSecondary,
-    flex: 1,
-  },
-  fileNoticeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: Radii.full,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  fileNoticeBtnText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-
-  // ── Empty Registered Complaints State ──
-  emptyComplaintsBox: {
+    paddingVertical: 9,
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: Spacing.lg,
+  },
+  pastelExploreText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#101828',
+  },
+  pastelArrowBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 7,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#EAECF0',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginTop: 4,
   },
-  emptyComplaintsIconCircle: {
+
+  // ── Empty States ──
+  emptyCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#EAECF0',
+    marginBottom: 8,
+  },
+  emptyIconCircle: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#F8FAFC',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
   },
-  emptyComplaintsText: {
+  emptyTitle: {
     fontSize: 13,
     fontWeight: '700',
     color: '#334155',
     textAlign: 'center',
     marginBottom: 4,
   },
-  emptyComplaintsSub: {
+  emptySub: {
     fontSize: 11,
     color: '#94A3B8',
     textAlign: 'center',
     lineHeight: 16,
-    paddingHorizontal: 12,
+    maxWidth: 240,
   },
 
-  // ── Official Statutory Advisory Notice Card ──
-  statutoryNoticeCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: Spacing.lg,
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    marginTop: Spacing.md,
-    marginBottom: Spacing.xl,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  statutoryBadgeRow: {
+  // ── Helpline Pill ──
+  helplinePill: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  statutoryIconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#FFF7ED',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(252, 146, 68, 0.3)',
+    paddingVertical: 12,
+    marginBottom: 20,
   },
-  statutoryBadgeTextCol: {
-    flex: 1,
-  },
-  statutoryBadgeTag: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: Colors.primary,
-    letterSpacing: 0.5,
-  },
-  statutoryRuleTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginTop: 1,
-  },
-  statutoryNoticeParagraph: {
-    fontSize: 12,
-    color: '#64748B',
-    lineHeight: 18,
-    marginBottom: 14,
-  },
-  statutoryHelplineBox: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  helplinePhoneRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 2,
-  },
-  helplinePhoneText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  helplinePortalText: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: '#64748B',
-    marginLeft: 19,
-  },
-
-  // ── Enforcement Intelligence Analytics Dashboard ──
-  dashboardSection: {
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.lg,
-  },
-  dashboardCard: {
-    backgroundColor: '#0F172A',
-    borderRadius: Radii.xl,
-    padding: Spacing.lg,
-    ...Shadows.medium,
-  },
-  dashboardHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.md,
-  },
-  dashboardHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  dashboardIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(13, 148, 136, 0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
-  dashboardBadgeTag: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#2DD4BF',
-    letterSpacing: 0.6,
-  },
-  dashboardTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginTop: 1,
-  },
-  complianceIndexPill: {
-    alignItems: 'flex-end',
-  },
-  complianceIndexValue: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#2DD4BF',
-  },
-  complianceIndexLabel: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: '#94A3B8',
-    letterSpacing: 0.5,
-  },
-  dashboardMetricsGrid: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: Radii.md,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    marginVertical: 4,
-  },
-  dashboardMetricItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  dashMetricNum: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  dashMetricLabel: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#94A3B8',
-    marginTop: 2,
-  },
-  dashboardMetricDivider: {
-    width: 1,
-    height: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  healthBarTrack: {
-    height: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 3,
-    marginTop: 12,
-    overflow: 'hidden',
-  },
-  healthBarFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-
-  // ── Search & Filter Repository ──
-  searchBarWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: Radii.lg,
-    paddingHorizontal: 12,
-    paddingVertical: Platform.OS === 'ios' ? 10 : 6,
-    marginBottom: Spacing.sm,
-    ...Shadows.soft,
-  },
-  searchInputField: {
-    flex: 1,
-    fontSize: 13,
-    color: Colors.textPrimary,
-  },
-  filterChipsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingBottom: Spacing.sm,
-    marginBottom: 4,
-  },
-  filterChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: Radii.full,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  filterChipActive: {
-    backgroundColor: '#0F172A',
-    borderColor: '#0F172A',
-  },
-  filterChipText: {
+  helplineText: {
     fontSize: 11,
     fontWeight: '600',
-    color: Colors.textSecondary,
-  },
-  filterChipTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-
-  // ── Repository Item Card ──
-  repoCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: Radii.lg,
-    padding: 12,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-    ...Shadows.soft,
-  },
-  repoThumbnailBox: {
-    width: 48,
-    height: 48,
-    borderRadius: Radii.sm,
-    backgroundColor: '#F8FAFC',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginRight: 12,
-  },
-  repoThumbnailImg: {
-    width: '100%',
-    height: '100%',
-  },
-  repoContentCol: {
-    flex: 1,
-  },
-  repoTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 2,
-  },
-  repoIdText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: Colors.textMuted,
-  },
-  repoDateText: {
-    fontSize: 10,
-    color: Colors.textMuted,
-  },
-  repoTitleText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-  repoCategoryText: {
-    fontSize: 11,
-    color: Colors.textSecondary,
-    marginTop: 1,
-  },
-  repoRightCol: {
-    alignItems: 'flex-end',
-    marginLeft: 8,
-  },
-  repoScoreBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: Radii.full,
-  },
-  repoScoreText: {
-    fontSize: 11,
-    fontWeight: '800',
+    color: '#64748B',
   },
 });

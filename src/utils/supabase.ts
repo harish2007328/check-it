@@ -43,6 +43,15 @@ const DEFAULT_STEPS: ComplaintStep[] = [
  * Fetch all scans from Supabase with AsyncStorage local caching.
  */
 export async function fetchScans(): Promise<ScanResult[]> {
+  // Read local cache first
+  let localScans: ScanResult[] = [];
+  try {
+    const local = await AsyncStorage.getItem(SCANS_STORAGE_KEY);
+    if (local) localScans = JSON.parse(local);
+  } catch {
+    localScans = [];
+  }
+
   try {
     const { data, error } = await supabase
       .from('scans')
@@ -52,43 +61,62 @@ export async function fetchScans(): Promise<ScanResult[]> {
     if (error) {
       console.warn('[Supabase] Error querying scans table:', error.message);
     } else if (data) {
-      const formatted: ScanResult[] = data.map((item: any) => ({
-        id: item.id,
-        timestamp: item.created_at || new Date().toISOString(),
-        productName: item.product_name || 'Unnamed Product',
-        category: item.category || 'General',
-        imageUri: item.extracted_data?.imageUri,
-        images: item.extracted_data?.images || [],
-        observations: Array.isArray(item.violations) ? item.violations : [],
-        fields: Array.isArray(item.mandatory_declarations) ? item.mandatory_declarations : [],
-        score: Number(item.compliance_score ?? 0),
-        overallStatus: item.overall_status || 'NEEDS_REVIEW',
-        fontReadability: item.extracted_data?.fontReadability,
-      }));
+      const localMap = new Map(localScans.map((s) => [s.id, s]));
 
-      await AsyncStorage.setItem(SCANS_STORAGE_KEY, JSON.stringify(formatted));
-      return formatted;
+      const formatted: ScanResult[] = data.map((item: any) => {
+        const localItem = localMap.get(item.id);
+        const resolvedImage =
+          item.extracted_data?.imageUri ||
+          item.extracted_data?.image ||
+          localItem?.imageUri ||
+          undefined;
+        const resolvedImages =
+          Array.isArray(item.extracted_data?.images) && item.extracted_data.images.length > 0
+            ? item.extracted_data.images
+            : localItem?.images && localItem.images.length > 0
+            ? localItem.images
+            : resolvedImage
+            ? [resolvedImage]
+            : [];
+
+        return {
+          id: item.id,
+          timestamp: item.created_at || new Date().toISOString(),
+          productName: item.product_name || 'Unnamed Product',
+          category: item.category || 'General',
+          imageUri: resolvedImage,
+          images: resolvedImages,
+          observations: Array.isArray(item.violations) ? item.violations : [],
+          fields: Array.isArray(item.mandatory_declarations) ? item.mandatory_declarations : [],
+          score: Number(item.compliance_score ?? 0),
+          overallStatus: item.overall_status || 'NEEDS_REVIEW',
+          fontReadability: item.extracted_data?.fontReadability || localItem?.fontReadability,
+        };
+      });
+
+      // Keep any local scans that may not yet have synced to Supabase
+      const serverIds = new Set(formatted.map((s) => s.id));
+      const unsyncedLocals = localScans.filter((s) => !serverIds.has(s.id));
+      const combined = [...unsyncedLocals, ...formatted];
+
+      await AsyncStorage.setItem(SCANS_STORAGE_KEY, JSON.stringify(combined));
+      return combined;
     }
   } catch (err) {
     console.warn('[Supabase] Error fetching scans, reading cache:', err);
   }
 
-  // Fallback to local AsyncStorage cache
-  try {
-    const local = await AsyncStorage.getItem(SCANS_STORAGE_KEY);
-    return local ? JSON.parse(local) : [];
-  } catch {
-    return [];
-  }
+  return localScans;
 }
 
 /**
  * Save a new scan to Supabase and update local cache.
  */
 export async function saveScan(scan: ScanResult): Promise<void> {
-  // Update local cache first for instant UI response
+  // Update local cache first for instant UI response without network delay
   try {
-    const current = await fetchScans();
+    const local = await AsyncStorage.getItem(SCANS_STORAGE_KEY);
+    const current: ScanResult[] = local ? JSON.parse(local) : [];
     const updated = [scan, ...current.filter((s) => s.id !== scan.id)];
     await AsyncStorage.setItem(SCANS_STORAGE_KEY, JSON.stringify(updated));
   } catch (e) {
@@ -112,7 +140,7 @@ export async function saveScan(scan: ScanResult): Promise<void> {
       violations: scan.observations ?? [],
       extracted_data: {
         imageUri: scan.imageUri ?? null,
-        images: scan.images ?? [],
+        images: scan.images ?? (scan.imageUri ? [scan.imageUri] : []),
         fontReadability: scan.fontReadability ?? null,
       },
       raw_ocr_text: null,
@@ -135,6 +163,15 @@ export async function saveScan(scan: ScanResult): Promise<void> {
  * Fetch registered complaints from Supabase with AsyncStorage local caching.
  */
 export async function fetchComplaints(): Promise<Complaint[]> {
+  // Read local cache first
+  let localComplaints: Complaint[] = [];
+  try {
+    const local = await AsyncStorage.getItem(COMPLAINTS_STORAGE_KEY);
+    if (local) localComplaints = JSON.parse(local);
+  } catch {
+    localComplaints = [];
+  }
+
   try {
     const { data, error } = await supabase
       .from('complaints')
@@ -144,7 +181,10 @@ export async function fetchComplaints(): Promise<Complaint[]> {
     if (error) {
       console.warn('[Supabase] Error querying complaints table:', error.message);
     } else if (data) {
+      const localMap = new Map(localComplaints.map((c) => [c.id, c]));
+
       const formatted: Complaint[] = data.map((item: any) => {
+        const localItem = localMap.get(item.id);
         const v = item.violations;
         const violationsList: string[] = Array.isArray(v)
           ? v
@@ -155,12 +195,14 @@ export async function fetchComplaints(): Promise<Complaint[]> {
         const severity = (!Array.isArray(v) && v?.severity) ? v.severity : 'MEDIUM';
         const category = (!Array.isArray(v) && v?.category) ? v.category : 'General';
         const steps = (!Array.isArray(v) && Array.isArray(v?.steps)) ? v.steps : DEFAULT_STEPS;
+        const resolvedImage = v?.imageUri || localItem?.imageUri || undefined;
 
         return {
           id: item.id,
           scanId: item.scan_id || '',
           productName: item.product_name || 'Unnamed Product',
           category,
+          imageUri: resolvedImage,
           violations: violationsList,
           notes,
           severity,
@@ -171,20 +213,18 @@ export async function fetchComplaints(): Promise<Complaint[]> {
         };
       });
 
-      await AsyncStorage.setItem(COMPLAINTS_STORAGE_KEY, JSON.stringify(formatted));
-      return formatted;
+      const serverIds = new Set(formatted.map((c) => c.id));
+      const unsyncedLocals = localComplaints.filter((c) => !serverIds.has(c.id));
+      const combined = [...unsyncedLocals, ...formatted];
+
+      await AsyncStorage.setItem(COMPLAINTS_STORAGE_KEY, JSON.stringify(combined));
+      return combined;
     }
   } catch (err) {
     console.warn('[Supabase] Error fetching complaints, reading cache:', err);
   }
 
-  // Fallback to local AsyncStorage cache
-  try {
-    const local = await AsyncStorage.getItem(COMPLAINTS_STORAGE_KEY);
-    return local ? JSON.parse(local) : [];
-  } catch {
-    return [];
-  }
+  return localComplaints;
 }
 
 /**
@@ -193,7 +233,8 @@ export async function fetchComplaints(): Promise<Complaint[]> {
 export async function saveComplaint(complaint: Complaint): Promise<void> {
   // Update local cache first
   try {
-    const current = await fetchComplaints();
+    const local = await AsyncStorage.getItem(COMPLAINTS_STORAGE_KEY);
+    const current: Complaint[] = local ? JSON.parse(local) : [];
     const updated = [complaint, ...current.filter((c) => c.id !== complaint.id)];
     await AsyncStorage.setItem(COMPLAINTS_STORAGE_KEY, JSON.stringify(updated));
   } catch (e) {
@@ -215,6 +256,7 @@ export async function saveComplaint(complaint: Complaint): Promise<void> {
         severity: complaint.severity,
         category: complaint.category,
         steps: complaint.steps,
+        imageUri: complaint.imageUri || null,
       },
       created_at: complaint.filedAt || new Date().toISOString(),
       updated_at: complaint.updatedAt || new Date().toISOString(),
