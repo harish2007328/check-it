@@ -1,4 +1,5 @@
 import * as ImageManipulator from 'expo-image-manipulator';
+import { File, Paths } from 'expo-file-system';
 import { ComplianceField, ScanResult } from '../types';
 import { runComplianceCheck } from '../data/ruleEngine';
 import { structureWithGroq, isGroqConfigured } from '../services/groqService';
@@ -352,8 +353,19 @@ export async function processOnDeviceOcr(
       height || 1024
     );
 
-    // Prefer persistent base64 data URI so images never expire or disappear across restarts/devices
-    const resolvedUri = base64 ? `data:image/jpeg;base64,${base64}` : (croppedUri || uri);
+    // Save image to persistent app storage (Paths.document) so it never expires,
+    // and keeps the URI string ultra-lightweight (~70 bytes) to prevent SQLite CursorWindow & network timeouts
+    let resolvedUri = croppedUri || uri;
+    if (base64) {
+      try {
+        const destFile = new File(Paths.document, `scan_panel_${Date.now()}_${i}.jpg`);
+        destFile.create({ overwrite: true });
+        destFile.write(base64, { encoding: 'base64' });
+        resolvedUri = destFile.uri;
+      } catch {
+        resolvedUri = croppedUri || uri;
+      }
+    }
     croppedUris.push(resolvedUri);
     if (i === 0) {
       primaryDimensions = cropDimensions;
